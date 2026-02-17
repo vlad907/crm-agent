@@ -6,3 +6,5 @@ pydantic
 pydantic-settings
 email-validator
 alembic
+httpx
+beautifulsoup4

@@ -23,3 +23,9 @@ class WebsiteSnapshotRead(WebsiteSnapshotBase):
     fetched_at: datetime
     created_at: datetime
     updated_at: datetime
+
+
+class WebsiteSnapshotIngestRead(BaseModel):
+    id: UUID
+    fetched_at: datetime
+    raw_text_length: int = Field(ge=0)
