@@ -1,10 +1,10 @@
-# CRM Backend (MVP)
+# CRM MVP
 
-Minimal FastAPI backend with Postgres via Docker Compose.
+FastAPI backend + Next.js frontend.
 
 Set `OPENAI_API_KEY` in your environment (or `.env`) before using `run-agent1`.
 
-## Run
+## Backend Run
 
 ```bash
 docker compose up --build
@@ -20,6 +20,30 @@ docker compose exec backend alembic upgrade head
 
 ```bash
 curl http://localhost:8000/health
+```
+
+## Frontend Setup
+
+Create `frontend/.env.local`:
+
+```bash
+NEXT_PUBLIC_API_BASE=http://localhost:8000
+```
+
+Local frontend run:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+Docker Compose frontend run:
+
+```bash
+docker compose up --build frontend
 ```
 
 ## API Examples
