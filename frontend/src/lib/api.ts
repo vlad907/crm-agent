@@ -1,6 +1,8 @@
 import {
   Agent1RunResult,
   Agent3RunResult,
+  ConvertProspectsPayload,
+  ConvertProspectsResponse,
   CreateLeadPayload,
   DevLoginPayload,
   DevLoginResult,
@@ -10,6 +12,16 @@ import {
   LeadImportResponse,
   LeadListResponse,
   LatestContext,
+  ProspectImportPayload,
+  ProspectImportResponse,
+  ProspectListResponse,
+  ProspectSearchPayload,
+  ProspectSearchResponse,
+  WorkspaceSettings,
+  WorkspaceProfile,
+  WorkspaceProfileUpdate,
+  WorkspaceSettingsUpdate,
+  WebsitePage,
   WebsiteIngestResult
 } from "@/src/lib/types";
 import { getUserId, getWorkspaceId } from "@/src/lib/identity";
@@ -110,6 +122,81 @@ export function importLeads(payload: LeadImportPayload): Promise<LeadImportRespo
   });
 }
 
+function buildProspectsQuery(
+  limit: number,
+  offset: number,
+  status?: string,
+  category?: string,
+  q?: string
+): string {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  if (status) {
+    params.set("status", status);
+  }
+  if (category) {
+    params.set("category", category);
+  }
+  if (q) {
+    params.set("q", q);
+  }
+  return params.toString();
+}
+
+export function getProspects(
+  limit: number,
+  offset: number,
+  status?: string,
+  category?: string,
+  q?: string
+): Promise<ProspectListResponse> {
+  return apiFetch<ProspectListResponse>(`/api/v1/prospects?${buildProspectsQuery(limit, offset, status, category, q)}`);
+}
+
+export function importProspects(payload: ProspectImportPayload): Promise<ProspectImportResponse> {
+  return apiFetch<ProspectImportResponse>("/api/v1/prospects/import", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function runProspectSearch(payload: ProspectSearchPayload): Promise<ProspectSearchResponse> {
+  return apiFetch<ProspectSearchResponse>("/api/v1/prospects/search", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function convertProspectsToLeads(payload: ConvertProspectsPayload): Promise<ConvertProspectsResponse> {
+  return apiFetch<ConvertProspectsResponse>("/api/v1/prospects/convert-to-leads", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function getWorkspaceSettings(): Promise<WorkspaceSettings> {
+  return apiFetch<WorkspaceSettings>("/api/v1/settings");
+}
+
+export function patchWorkspaceSettings(payload: WorkspaceSettingsUpdate): Promise<WorkspaceSettings> {
+  return apiFetch<WorkspaceSettings>("/api/v1/settings", {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function getWorkspaceProfile(): Promise<WorkspaceProfile> {
+  return apiFetch<WorkspaceProfile>("/api/v1/workspace-profile");
+}
+
+export function patchWorkspaceProfile(payload: WorkspaceProfileUpdate): Promise<WorkspaceProfile> {
+  return apiFetch<WorkspaceProfile>("/api/v1/workspace-profile", {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getLead(id: string): Promise<Lead> {
   return apiFetch<Lead>(`/api/v1/leads/${id}`);
 }
@@ -144,6 +231,10 @@ export function getLatestContext(id: string): Promise<LatestContext> {
 
 export function getLeadDrafts(id: string, limit = 20, offset = 0): Promise<Draft[]> {
   return apiFetch<Draft[]>(`/api/v1/leads/${id}/drafts?limit=${limit}&offset=${offset}`);
+}
+
+export function getLeadWebsitePages(id: string, limit = 50, offset = 0): Promise<WebsitePage[]> {
+  return apiFetch<WebsitePage[]>(`/api/v1/leads/${id}/website-pages?limit=${limit}&offset=${offset}`);
 }
 
 export function devLogin(payload: DevLoginPayload): Promise<DevLoginResult> {

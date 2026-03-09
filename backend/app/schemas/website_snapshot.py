@@ -30,3 +30,6 @@ class WebsiteSnapshotIngestRead(BaseModel):
     id: UUID
     fetched_at: datetime
     raw_text_length: int = Field(ge=0)
+    pages_saved: int = Field(default=0, ge=0)
+    emails_found: list[str] = Field(default_factory=list)
+    phones_found: list[str] = Field(default_factory=list)

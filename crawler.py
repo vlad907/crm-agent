@@ -58,12 +58,12 @@ DEFAULT_BUSINESS_TYPES = [
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Google Places crawler that produces payload for POST /api/v1/leads/imports",
+        description="Google Places crawler that produces payload for POST /api/v1/prospects/import",
     )
     parser.add_argument(
         "--api-key",
-        default=os.getenv("GOOGLE_MAPS_API_KEY"),
-        help="Google Maps API key (or set GOOGLE_MAPS_API_KEY)",
+        default=os.getenv("GOOGLE_PLACES_API_KEY") or os.getenv("GOOGLE_MAPS_API_KEY"),
+        help="Google Places API key (or set GOOGLE_PLACES_API_KEY / GOOGLE_MAPS_API_KEY)",
     )
     parser.add_argument("--location", default=DEFAULT_LOCATION, help="lat,lng")
     parser.add_argument("--radius", type=int, default=DEFAULT_RADIUS, help="search radius in meters")
@@ -81,7 +81,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         default="crawler_output.json",
-        help="output JSON file for /api/v1/leads/imports payload",
+        help="output JSON file for /api/v1/prospects/import payload",
     )
     return parser.parse_args()
 
@@ -89,34 +89,44 @@ def parse_args() -> argparse.Namespace:
 def build_import_payload(
     *,
     places: list[GooglePlaceLead],
-    source: str = "google_places",
+    source: str = "google_business",
 ) -> dict[str, object]:
     items: list[dict[str, str | None]] = []
     for place in places:
         items.append(
             {
-                "name": place.company,
-                "company": place.company,
-                "industry": place.business_type,
-                "location": place.location,
-                "website_url": place.website_url,
                 "source": source,
-                "status": "new",
+                "external_id": place.place_id,
+                "company_name": place.company,
+                "category": place.business_type,
+                "address": place.location or "Unknown address",
+                "phone": place.phone,
+                "website_url": place.website_url,
+                "rating": place.rating,
+                "review_count": place.review_count,
+                "raw_source_payload": {
+                    "place_id": place.place_id,
+                    "business_type": place.business_type,
+                    "company": place.company,
+                    "vicinity": place.location,
+                    "phone": place.phone,
+                    "website": place.website_url,
+                    "rating": place.rating,
+                    "review_count": place.review_count,
+                },
+                "import_status": "new",
             }
         )
 
     return {
-        "source": source,
         "items": items,
-        "dedupe_by_website": True,
-        "dedupe_by_company_location": True,
     }
 
 
 def main() -> int:
     args = parse_args()
     if not args.api_key:
-        print("Missing API key. Use --api-key or set GOOGLE_MAPS_API_KEY.")
+        print("Missing API key. Use --api-key or set GOOGLE_PLACES_API_KEY (or GOOGLE_MAPS_API_KEY).")
         return 1
 
     business_types = [part.strip() for part in args.types.split(",") if part.strip()]
@@ -141,9 +151,9 @@ def main() -> int:
     output_path = Path(args.output)
     output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    print(f"Crawled {len(leads)} candidate leads.")
+    print(f"Crawled {len(leads)} candidate prospects.")
     print(f"Wrote import payload to {output_path}.")
-    print("Next step: POST this JSON to /api/v1/leads/imports with workspace/user headers.")
+    print("Next step: POST this JSON to /api/v1/prospects/import with workspace/user headers.")
     return 0
 
 

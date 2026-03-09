@@ -1,4 +1,5 @@
 import { Lead } from "@/src/lib/types";
+import { LeadStage, resolveLeadPipeline, stageLabel } from "@/src/lib/leadPipeline";
 
 interface LeadSummaryCardProps {
   lead: Lead | null;
@@ -7,10 +8,14 @@ interface LeadSummaryCardProps {
 
 function statusClass(status?: string): string {
   switch ((status ?? "").toLowerCase()) {
+    case "ready":
     case "send":
+    case "sent":
       return "status-badge status-send";
     case "hold":
       return "status-badge status-hold";
+    case "agent2":
+    case "agent3":
     case "draft":
       return "status-badge status-draft";
     default:
@@ -18,12 +23,27 @@ function statusClass(status?: string): string {
   }
 }
 
+function toLocalDate(value?: string): string {
+  if (!value) {
+    return "-";
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
 export function LeadSummaryCard({ lead, loading }: LeadSummaryCardProps) {
+  const stage = lead ? resolveLeadPipeline(lead).computed_stage : "new";
+
   return (
     <section className="card stack">
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
         <h2>Lead Profile</h2>
-        {lead ? <span className={statusClass(lead.status)}>{lead.status || "new"}</span> : null}
+        <div className="inline-actions">
+          {lead ? <span className={statusClass(stage)}>{stageLabel(stage as LeadStage)}</span> : null}
+          <button type="button" className="btn-danger" disabled title="Delete flow coming soon">
+            Delete Lead
+          </button>
+        </div>
       </div>
       {loading ? (
         <div className="muted">Loading lead...</div>
@@ -36,6 +56,10 @@ export function LeadSummaryCard({ lead, loading }: LeadSummaryCardProps) {
           <div className="kv">
             <strong>Company</strong>
             {lead.company || "-"}
+          </div>
+          <div className="kv">
+            <strong>Current Stage</strong>
+            {stageLabel(stage as LeadStage)}
           </div>
           <div className="kv">
             <strong>Website</strong>
@@ -52,6 +76,10 @@ export function LeadSummaryCard({ lead, loading }: LeadSummaryCardProps) {
             {lead.email || "-"}
           </div>
           <div className="kv">
+            <strong>Phone</strong>
+            {lead.phone || "-"}
+          </div>
+          <div className="kv">
             <strong>Industry</strong>
             {lead.industry || "-"}
           </div>
@@ -66,6 +94,14 @@ export function LeadSummaryCard({ lead, loading }: LeadSummaryCardProps) {
           <div className="kv">
             <strong>Lead ID</strong>
             {lead.id}
+          </div>
+          <div className="kv">
+            <strong>Created</strong>
+            {toLocalDate(lead.created_at)}
+          </div>
+          <div className="kv">
+            <strong>Updated</strong>
+            {toLocalDate(lead.updated_at)}
           </div>
         </div>
       ) : (

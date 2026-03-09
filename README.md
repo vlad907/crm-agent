@@ -234,8 +234,52 @@ curl -X POST http://localhost:8000/api/v1/leads/imports \
   }'
 ```
 
-`crawler.py` now outputs this payload shape:
+`crawler.py` now outputs a **prospects** import payload (for `/api/v1/prospects/import`), not direct CRM lead imports.
+
+## Prospect Discovery Flow
+
+Prospects are stored separately from CRM leads:
+
+`crawler/search -> prospects -> manual review -> convert selected -> leads -> pipeline`
+
+List prospects:
 
 ```bash
-GOOGLE_MAPS_API_KEY=<key> python crawler.py --output crawler_output.json
+curl -s "http://localhost:8000/api/v1/prospects?limit=20&offset=0" \
+  -H "X-Workspace-Id: <workspace_uuid>" \
+  -H "X-User-Id: <user_uuid>" | jq
+```
+
+Import prospects from crawler JSON:
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/prospects/import \
+  -H "Content-Type: application/json" \
+  -H "X-Workspace-Id: <workspace_uuid>" \
+  -H "X-User-Id: <user_uuid>" \
+  --data-binary @crawler_output.json | jq
+```
+
+Convert prospects to CRM leads:
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/prospects/convert-to-leads \
+  -H "Content-Type: application/json" \
+  -H "X-Workspace-Id: <workspace_uuid>" \
+  -H "X-User-Id: <user_uuid>" \
+  -d '{"prospect_ids":["<prospect_uuid_1>","<prospect_uuid_2>"]}' | jq
+```
+
+Workspace settings API (per-workspace API keys):
+
+```bash
+curl -s http://localhost:8000/api/v1/settings \
+  -H "X-Workspace-Id: <workspace_uuid>" \
+  -H "X-User-Id: <user_uuid>" | jq
+
+curl -s -X PATCH http://localhost:8000/api/v1/settings \
+  -H "Content-Type: application/json" \
+  -H "X-Workspace-Id: <workspace_uuid>" \
+  -H "X-User-Id: <user_uuid>" \
+  -d '{"google_places_api_key":"AIza...","openai_api_key":"sk-..."}' | jq
 ```

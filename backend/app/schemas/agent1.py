@@ -29,3 +29,4 @@ class LatestContextResponse(BaseModel):
     agent3_decision: str | None = None
     agent3_issues: list[str] | None = None
     final_email: FinalEmailRead | None = None
+    prepared_context: dict[str, Any] | None = None

@@ -55,6 +55,10 @@ class Agent3VerifierError(RuntimeError):
     pass
 
 
+class Agent3ConfigurationError(Agent3VerifierError):
+    pass
+
+
 class Agent3RateLimitError(Agent3VerifierError):
     pass
 
@@ -68,12 +72,14 @@ def verify_email_with_agent3(
     agent1_output: dict[str, Any],
     draft_subject: str,
     draft_body: str,
+    api_key: str | None = None,
 ) -> dict[str, Any]:
-    if not settings.openai_api_key:
-        raise Agent3VerifierError("OPENAI_API_KEY is not configured")
+    resolved_api_key = (api_key or "").strip() or (settings.openai_api_key or "").strip()
+    if not resolved_api_key:
+        raise Agent3ConfigurationError("OpenAI API key is not configured")
 
     headers = {
-        "Authorization": f"Bearer {settings.openai_api_key}",
+        "Authorization": f"Bearer {resolved_api_key}",
         "Content-Type": "application/json",
     }
     payload = _build_payload(

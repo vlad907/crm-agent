@@ -9,6 +9,7 @@ import { ApiError, createLead } from "@/src/lib/api";
 interface LeadFormState {
   name: string;
   company: string;
+  phone: string;
   website_url: string;
   email: string;
   location: string;
@@ -20,6 +21,7 @@ interface LeadFormState {
 const initialState: LeadFormState = {
   name: "",
   company: "",
+  phone: "",
   website_url: "",
   email: "",
   location: "",
@@ -61,6 +63,7 @@ export default function NewLeadPage() {
       const created = await createLead({
         name: form.name.trim(),
         company: form.company.trim(),
+        phone: form.phone.trim() || null,
         website_url: form.website_url.trim() || null,
         email: form.email.trim() || null,
         location: form.location.trim() || null,
@@ -120,6 +123,10 @@ export default function NewLeadPage() {
           </div>
 
           <div className="row">
+            <div className="field">
+              <label htmlFor="phone">Phone</label>
+              <input id="phone" value={form.phone} onChange={(event) => updateField("phone", event.target.value)} />
+            </div>
             <div className="field">
               <label htmlFor="website_url">Website URL</label>
               <input

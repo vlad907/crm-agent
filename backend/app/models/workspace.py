@@ -14,8 +14,12 @@ if TYPE_CHECKING:
     from app.models.email_draft import EmailDraft
     from app.models.integration_account import IntegrationAccount
     from app.models.lead import Lead
+    from app.models.prospect import Prospect
     from app.models.user import User
+    from app.models.website_page import WebsitePage
     from app.models.website_snapshot import WebsiteSnapshot
+    from app.models.workspace_profile import WorkspaceProfile
+    from app.models.workspace_setting import WorkspaceSetting
 
 
 class Workspace(TimestampMixin, Base):
@@ -37,3 +41,25 @@ class Workspace(TimestampMixin, Base):
         passive_deletes=True,
     )
     drafts: Mapped[list["EmailDraft"]] = relationship(back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
+    prospects: Mapped[list["Prospect"]] = relationship(
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    settings: Mapped["WorkspaceSetting | None"] = relationship(
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
+    profile: Mapped["WorkspaceProfile | None"] = relationship(
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
+    website_pages: Mapped[list["WebsitePage"]] = relationship(
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )

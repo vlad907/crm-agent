@@ -23,7 +23,10 @@ class GooglePlaceLead:
     place_id: str
     company: str
     location: str | None
+    phone: str | None
     website_url: str | None
+    rating: float | None
+    review_count: int | None
     business_type: str
 
 
@@ -85,7 +88,7 @@ class GooglePlacesCrawler:
             {
                 "key": self.api_key,
                 "place_id": place_id,
-                "fields": "name,vicinity,website",
+                "fields": "name,vicinity,formatted_phone_number,website,rating,user_ratings_total",
             },
         )
         details = payload.get("result")
@@ -97,13 +100,23 @@ class GooglePlacesCrawler:
             return None
 
         location = details.get("vicinity") if isinstance(details.get("vicinity"), str) else None
+        phone = details.get("formatted_phone_number") if isinstance(details.get("formatted_phone_number"), str) else None
         website_url = details.get("website") if isinstance(details.get("website"), str) else None
+        raw_rating = details.get("rating")
+        rating = None
+        if isinstance(raw_rating, (int, float)):
+            rating = float(raw_rating)
+        raw_review_count = details.get("user_ratings_total")
+        review_count = raw_review_count if isinstance(raw_review_count, int) else None
 
         return GooglePlaceLead(
             place_id=place_id,
             company=company.strip(),
             location=location.strip() if location else None,
+            phone=phone.strip() if phone else None,
             website_url=website_url.strip() if website_url else None,
+            rating=rating,
+            review_count=review_count,
             business_type="",
         )
 
@@ -142,7 +155,10 @@ class GooglePlacesCrawler:
                         place_id=details.place_id,
                         company=details.company,
                         location=details.location,
+                        phone=details.phone,
                         website_url=details.website_url,
+                        rating=details.rating,
+                        review_count=details.review_count,
                         business_type=business_type,
                     )
                 )

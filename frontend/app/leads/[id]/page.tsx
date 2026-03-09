@@ -11,13 +11,14 @@ import {
   ApiError,
   getLead,
   getLeadDrafts,
+  getLeadWebsitePages,
   getLatestContext,
   ingestWebsite,
   runAgent1,
   runAgent2,
   runAgent3
 } from "@/src/lib/api";
-import { Draft, Lead, LatestContext } from "@/src/lib/types";
+import { Draft, Lead, LatestContext, WebsitePage } from "@/src/lib/types";
 
 type ActionKey = "ingest" | "agent1" | "agent2" | "agent3" | "refresh";
 type StageState = "done" | "active" | "pending";
@@ -39,9 +40,11 @@ export default function LeadDetailPage() {
   const [lead, setLead] = useState<Lead | null>(null);
   const [context, setContext] = useState<LatestContext | null>(null);
   const [latestDraft, setLatestDraft] = useState<Draft | null>(null);
+  const [websitePages, setWebsitePages] = useState<WebsitePage[]>([]);
 
   const [leadLoading, setLeadLoading] = useState(true);
   const [contextLoading, setContextLoading] = useState(true);
+  const [pagesLoading, setPagesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
@@ -89,8 +92,9 @@ export default function LeadDetailPage() {
     }
 
     setContextLoading(true);
+    setPagesLoading(true);
     try {
-      const [ctx, drafts] = await Promise.all([
+      const [ctx, drafts, pages] = await Promise.all([
         getLatestContext(leadId).catch((ctxError: unknown) => {
           if (ctxError instanceof ApiError && ctxError.status === 404) {
             return null;
@@ -102,16 +106,24 @@ export default function LeadDetailPage() {
             return [];
           }
           throw draftError;
-        })
+        }),
+        getLeadWebsitePages(leadId, 100, 0).catch((pagesError: unknown) => {
+          if (pagesError instanceof ApiError && pagesError.status === 404) {
+            return [];
+          }
+          throw pagesError;
+        }),
       ]);
 
       setContext(ctx);
       setLatestDraft(drafts.length > 0 ? drafts[0] : null);
+      setWebsitePages(pages);
       setError(null);
     } catch (ctxError) {
       setError(getErrorMessage(ctxError));
     } finally {
       setContextLoading(false);
+      setPagesLoading(false);
     }
   }
 
@@ -189,6 +201,43 @@ export default function LeadDetailPage() {
         showFullSnapshot={showFullSnapshot}
         onToggleSnapshot={() => setShowFullSnapshot((prev) => !prev)}
       />
+
+      <section className="card stack">
+        <h2>Ingested Website Pages</h2>
+        {pagesLoading ? (
+          <div className="muted">Loading website pages...</div>
+        ) : websitePages.length === 0 ? (
+          <div className="muted">No website pages found. Run Ingest Website to populate this section.</div>
+        ) : (
+          <div className="stack">
+            {websitePages.map((page) => (
+              <article key={page.id} className="subcard stack">
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <strong>{page.page_type.toUpperCase()}</strong>
+                  <span className="muted">{new Date(page.created_at).toLocaleString()}</span>
+                </div>
+                <a href={page.url} target="_blank" rel="noreferrer" className="external-link">
+                  {page.url}
+                </a>
+                <div className="row">
+                  <div className="field">
+                    <label>Extracted Emails</label>
+                    <div className="muted">{page.extracted_emails.length ? page.extracted_emails.join(", ") : "-"}</div>
+                  </div>
+                  <div className="field">
+                    <label>Extracted Phones</label>
+                    <div className="muted">{page.extracted_phones.length ? page.extracted_phones.join(", ") : "-"}</div>
+                  </div>
+                </div>
+                <details>
+                  <summary style={{ cursor: "pointer", fontWeight: 600 }}>View Page Text</summary>
+                  <pre className="snapshot-text">{page.raw_text}</pre>
+                </details>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

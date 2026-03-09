@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { IDENTITY_UPDATED_EVENT, getUserId, getWorkspaceId } from "@/src/lib/identity";
+
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
 
 function shortId(value: string): string {
   if (!value) {
@@ -15,9 +17,34 @@ function shortId(value: string): string {
   return `${value.slice(0, 8)}...${value.slice(-4)}`;
 }
 
+function slugifyLabel(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || value;
+}
+
 export function IdentityBanner() {
   const [workspaceId, setWorkspace] = useState("");
   const [userId, setUser] = useState("");
+  const [workspaceLabel, setWorkspaceLabel] = useState("");
+  const [userLabel, setUserLabel] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function onClickOutside(event: MouseEvent): void {
+      if (!menuRef.current || menuRef.current.contains(event.target as Node)) {
+        return;
+      }
+      setMenuOpen(false);
+    }
+
+    document.addEventListener("click", onClickOutside);
+    return () => document.removeEventListener("click", onClickOutside);
+  }, []);
 
   useEffect(() => {
     const sync = () => {
@@ -34,29 +61,74 @@ export function IdentityBanner() {
     };
   }, []);
 
+  useEffect(() => {
+    async function loadIdentity(): Promise<void> {
+      if (!workspaceId || !userId) {
+        setWorkspaceLabel("");
+        setUserLabel("");
+        return;
+      }
+      try {
+        const response = await fetch(`${API_BASE}/api/v1/me`, {
+          headers: {
+            "X-Workspace-Id": workspaceId,
+            "X-User-Id": userId
+          },
+          cache: "no-store"
+        });
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as {
+          workspace?: { name?: string };
+          user?: { name?: string; email?: string };
+        };
+        setWorkspaceLabel(slugifyLabel(payload.workspace?.name ?? ""));
+        const displayUser = (payload.user?.name || payload.user?.email || "").trim();
+        setUserLabel(displayUser ? slugifyLabel(displayUser.split(/\s+/)[0]) : "");
+      } catch {
+        setWorkspaceLabel("");
+        setUserLabel("");
+      }
+    }
+
+    void loadIdentity();
+  }, [workspaceId, userId]);
+
+  const workspaceDisplay = useMemo(() => workspaceLabel || shortId(workspaceId), [workspaceLabel, workspaceId]);
+  const userDisplay = useMemo(() => userLabel || shortId(userId), [userLabel, userId]);
+
   return (
-    <div
-      className="row"
-      style={{
-        marginBottom: 12,
-        padding: "8px 12px",
-        border: "1px solid #d8e2ef",
-        borderRadius: 10,
-        background: "#f8fbff",
-        fontSize: "0.82rem",
-        color: "#3c4f67",
-        alignItems: "center"
-      }}
-    >
-      <span>
-        Workspace: <strong>{shortId(workspaceId)}</strong>
-      </span>
-      <span>
-        User: <strong>{shortId(userId)}</strong>
-      </span>
-      <Link href="/settings" className="external-link" style={{ fontWeight: 600 }}>
-        Settings
-      </Link>
+    <div className="identity-menu" ref={menuRef}>
+      <button
+        className="identity-trigger"
+        type="button"
+        title="Workspace identity menu"
+        onClick={() => setMenuOpen((prev) => !prev)}
+      >
+        <span className="identity-badge-dot" />
+        <span className="identity-lines">
+          <span>
+            Workspace: <strong>{workspaceDisplay}</strong>
+          </span>
+          <span>
+            User: <strong>{userDisplay}</strong>
+          </span>
+        </span>
+      </button>
+      {menuOpen ? (
+        <div className="identity-dropdown">
+          <Link href="/settings" className="identity-dropdown-item" onClick={() => setMenuOpen(false)}>
+            Settings
+          </Link>
+          <button type="button" className="identity-dropdown-item" disabled title="Coming soon">
+            Switch Workspace (future)
+          </button>
+          <button type="button" className="identity-dropdown-item" disabled title="Coming soon">
+            Logout (future)
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

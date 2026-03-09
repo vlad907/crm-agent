@@ -12,6 +12,7 @@ class LeadBase(BaseModel):
     company: str = Field(min_length=1, max_length=255)
     industry: str | None = Field(default=None, max_length=255)
     location: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=50)
     website_url: str | None = Field(default=None, max_length=500)
     email: EmailStr | None = None
     source: str = Field(min_length=1, max_length=100)
@@ -28,6 +29,7 @@ class LeadUpdate(BaseModel):
     company: str | None = Field(default=None, min_length=1, max_length=255)
     industry: str | None = Field(default=None, max_length=255)
     location: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=50)
     website_url: str | None = Field(default=None, max_length=500)
     email: EmailStr | None = None
     source: str | None = Field(default=None, min_length=1, max_length=100)
@@ -41,6 +43,16 @@ class LeadRead(LeadBase):
     workspace_id: UUID
     created_at: datetime
     updated_at: datetime
+    pipeline_summary: "LeadPipelineSummary | None" = None
+
+
+class LeadPipelineSummary(BaseModel):
+    has_snapshot: bool = False
+    has_agent1_output: bool = False
+    has_draft: bool = False
+    has_agent3_verdict: bool = False
+    final_decision: str | None = None
+    computed_stage: str = "new"
 
 
 class LeadListResponse(BaseModel):

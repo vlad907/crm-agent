@@ -13,7 +13,13 @@ from app.db.session import get_db
 from app.models.email_draft import EmailDraft
 from app.models.website_snapshot import WebsiteSnapshot
 from app.schemas.agent3 import Agent3RunResponse, FinalEmailRead
-from app.services.agent3_verifier import Agent3RateLimitError, Agent3VerifierError, verify_email_with_agent3
+from app.services.agent3_verifier import (
+    Agent3ConfigurationError,
+    Agent3RateLimitError,
+    Agent3VerifierError,
+    verify_email_with_agent3,
+)
+from app.services.workspace_credentials import resolve_openai_api_key
 
 router = APIRouter(prefix="/leads/{lead_id}", tags=["Agent 3"])
 logger = logging.getLogger(__name__)
@@ -25,6 +31,7 @@ def run_agent3_for_lead(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_request_context),
 ) -> Agent3RunResponse:
+    logger.info("Agent3 run requested workspace_id=%s lead_id=%s", ctx.workspace_id, lead_id)
     lead = require_scoped_lead(db=db, lead_id=lead_id, workspace_id=ctx.workspace_id)
 
     latest_snapshot = db.scalar(
@@ -34,7 +41,11 @@ def run_agent3_for_lead(
         .limit(1)
     )
     if latest_snapshot is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No website snapshots found for lead")
+        logger.warning("Agent3 missing dependency workspace_id=%s lead_id=%s dependency=latest_snapshot", ctx.workspace_id, lead_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No website snapshots found for lead. Run /ingest-website first.",
+        )
 
     recent_drafts = db.scalars(
         select(EmailDraft)
@@ -59,7 +70,11 @@ def run_agent3_for_lead(
                 latest_draft = draft
                 break
     if latest_draft is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No agent2 draft found for lead")
+        logger.warning("Agent3 missing dependency workspace_id=%s lead_id=%s dependency=agent2_draft", ctx.workspace_id, lead_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No agent2 draft found for lead. Run /run-agent2 first.",
+        )
 
     latest_agent1_draft = db.scalar(
         select(EmailDraft)
@@ -72,7 +87,27 @@ def run_agent3_for_lead(
         .limit(1)
     )
     if latest_agent1_draft is None or latest_agent1_draft.agent1_output is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No agent1 output found for lead")
+        logger.warning("Agent3 missing dependency workspace_id=%s lead_id=%s dependency=agent1_output", ctx.workspace_id, lead_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No agent1 output found for lead. Run /run-agent1 first.",
+        )
+    logger.info(
+        "Agent3 dependencies workspace_id=%s lead_id=%s snapshot_id=%s agent2_draft_id=%s agent1_draft_id=%s",
+        ctx.workspace_id,
+        lead_id,
+        latest_snapshot.id,
+        latest_draft.id,
+        latest_agent1_draft.id,
+    )
+
+    openai_api_key, key_source = resolve_openai_api_key(db=db, workspace_id=ctx.workspace_id)
+    logger.info(
+        "Agent3 OpenAI key resolution workspace_id=%s lead_id=%s key_source=%s",
+        ctx.workspace_id,
+        lead_id,
+        key_source,
+    )
 
     logger.info("Agent3 run start lead_id=%s draft_id=%s", lead_id, latest_draft.id)
     try:
@@ -84,7 +119,14 @@ def run_agent3_for_lead(
             agent1_output=latest_agent1_draft.agent1_output,
             draft_subject=latest_draft.subject,
             draft_body=latest_draft.body,
+            api_key=openai_api_key,
         )
+    except Agent3ConfigurationError as exc:
+        logger.warning("Agent3 configuration error workspace_id=%s lead_id=%s error=%s", ctx.workspace_id, lead_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OpenAI API key is missing. Configure workspace settings at /api/v1/settings or set OPENAI_API_KEY.",
+        ) from exc
     except Agent3RateLimitError as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=f"Agent3 failed: {exc}") from exc
     except Agent3VerifierError as exc:

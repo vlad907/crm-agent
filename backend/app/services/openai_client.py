@@ -166,6 +166,10 @@ class OpenAIClientError(RuntimeError):
     pass
 
 
+class OpenAIConfigurationError(OpenAIClientError):
+    pass
+
+
 class OpenAIOutputValidationError(OpenAIClientError):
     pass
 
@@ -178,13 +182,14 @@ class OpenAIQuotaExceededError(OpenAIRateLimitError):
     pass
 
 
-def run_agent1(raw_text: str) -> dict[str, Any]:
-    if not settings.openai_api_key:
-        raise OpenAIClientError("OPENAI_API_KEY is not configured")
+def run_agent1(raw_text: str, *, api_key: str | None = None) -> dict[str, Any]:
+    resolved_api_key = (api_key or "").strip() or (settings.openai_api_key or "").strip()
+    if not resolved_api_key:
+        raise OpenAIConfigurationError("OpenAI API key is not configured")
 
     logger.info("Agent1 OpenAI request start text_length=%s", len(raw_text))
     headers = {
-        "Authorization": f"Bearer {settings.openai_api_key}",
+        "Authorization": f"Bearer {resolved_api_key}",
         "Content-Type": "application/json",
     }
     payload = _build_payload(raw_text)
@@ -238,13 +243,15 @@ def run_agent2(
     website_url: str | None,
     snapshot_text: str,
     agent1_output: dict[str, Any],
+    api_key: str | None = None,
 ) -> dict[str, Any]:
-    if not settings.openai_api_key:
-        raise OpenAIClientError("OPENAI_API_KEY is not configured")
+    resolved_api_key = (api_key or "").strip() or (settings.openai_api_key or "").strip()
+    if not resolved_api_key:
+        raise OpenAIConfigurationError("OpenAI API key is not configured")
 
     logger.info("Agent2 OpenAI request start text_length=%s", len(snapshot_text))
     headers = {
-        "Authorization": f"Bearer {settings.openai_api_key}",
+        "Authorization": f"Bearer {resolved_api_key}",
         "Content-Type": "application/json",
     }
     payload = _build_agent2_payload(

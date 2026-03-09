@@ -20,24 +20,29 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <span className="brand">CRM Command</span>
               <span className="brand-sub">Lead pipeline control center</span>
             </Link>
-            <nav>
-              <Link href="/" className="nav-link">
-                Leads
-              </Link>
-              <Link href="/leads/new" className="nav-link">
-                New Lead
-              </Link>
-              <Link href="/settings" className="nav-link">
-                Settings
-              </Link>
-              <Link href="/login" className="nav-link">
-                Login
-              </Link>
-            </nav>
+            <div className="topbar-actions">
+              <nav>
+                <Link href="/" className="nav-link">
+                  Leads
+                </Link>
+                <Link href="/prospects" className="nav-link">
+                  Prospects
+                </Link>
+                <Link href="/leads/new" className="nav-link">
+                  New Lead
+                </Link>
+                <Link href="/settings" className="nav-link">
+                  Settings
+                </Link>
+                <Link href="/login" className="nav-link">
+                  Login
+                </Link>
+              </nav>
+              <IdentityBanner />
+            </div>
           </div>
         </header>
         <main className="container page">
-          <IdentityBanner />
           {children}
         </main>
       </body>
