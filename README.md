@@ -2,7 +2,46 @@
 
 FastAPI backend + Next.js frontend.
 
-Set `OPENAI_API_KEY` in your environment (or `.env`) before using `run-agent1`.
+## Multi-Tenant Model
+
+All CRM pipeline data is tenant-scoped by `workspace_id`:
+- `leads`
+- `website_snapshots`
+- `email_drafts`
+
+New foundational tables:
+- `workspaces`
+- `users`
+- `integration_accounts`
+- `oauth_tokens`
+
+Every API request resolves identity from:
+- `X-Workspace-Id`
+- `X-User-Id`
+
+If headers are omitted, backend uses:
+- `DEFAULT_WORKSPACE_ID`
+- `DEFAULT_USER_ID`
+
+If env defaults are missing in development, startup bootstrap creates a default workspace/user and uses them as runtime defaults.
+
+## Environment
+
+`.env.example` now includes:
+
+```bash
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=crm_db
+DATABASE_URL=postgresql+psycopg2://postgres:postgres@db:5432/crm_db
+ENV=development
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_RATE_LIMIT_RETRIES=5
+OPENAI_RATE_LIMIT_BACKOFF_SECONDS=1.0
+DEFAULT_WORKSPACE_ID=
+DEFAULT_USER_ID=
+```
 
 ## Backend Run
 
@@ -14,6 +53,29 @@ docker compose up --build
 
 ```bash
 docker compose exec backend alembic upgrade head
+```
+
+## Dev Bootstrap Flow
+
+1) Start stack and run migrations.
+
+2) Fetch current request identity:
+
+```bash
+curl http://localhost:8000/api/v1/me
+```
+
+3) Copy returned IDs into `.env`:
+
+```bash
+DEFAULT_WORKSPACE_ID=<workspace_uuid>
+DEFAULT_USER_ID=<user_uuid>
+```
+
+4) Restart backend:
+
+```bash
+docker compose up -d --build backend
 ```
 
 ## Health Check
@@ -28,7 +90,13 @@ Create `frontend/.env.local`:
 
 ```bash
 NEXT_PUBLIC_API_BASE=http://localhost:8000
+NEXT_PUBLIC_WORKSPACE_ID=<workspace_uuid>
+NEXT_PUBLIC_USER_ID=<user_uuid>
 ```
+
+Frontend sends `X-Workspace-Id` and `X-User-Id` on every request.
+You can override IDs at runtime in `Settings` (`/settings`), which stores values in browser localStorage.
+You can also use `Login` (`/login`) to sign in with email; if user does not exist yet, backend creates it and frontend stores returned workspace/user IDs.
 
 Local frontend run:
 
@@ -40,111 +108,134 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-Docker Compose frontend run:
+Docker frontend run:
 
 ```bash
 docker compose up --build frontend
 ```
 
-## API Examples
-
-Create a lead:
+## Dev Login
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/leads \
+curl -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "Ada Lovelace",
-    "title": "CTO",
-    "company": "Analytical Engines",
-    "industry": "Software",
-    "location": "London",
-    "website_url": "https://example.com",
-    "email": "ada@example.com",
-    "source": "import",
-    "status": "new"
-  }'
+  -d '{"email":"dev@example.com","name":"Dev User"}'
 ```
 
-List leads:
+## Header Usage
+
+Use headers for explicit workspace scoping:
 
 ```bash
-curl "http://localhost:8000/api/v1/leads?status=new&q=Engine&limit=20&offset=0"
+-H "X-Workspace-Id: <workspace_uuid>" \
+-H "X-User-Id: <user_uuid>"
 ```
 
-Ingest a website into `WebsiteSnapshot`:
+## Workspace/User Endpoints
+
+Create workspace:
 
 ```bash
-# 1) Create a lead with a website URL and capture its id
-LEAD_ID=$(curl -s -X POST http://localhost:8000/api/v1/leads \
+curl -X POST http://localhost:8000/api/v1/workspaces \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "Ada Lovelace",
-    "title": "CTO",
-    "company": "Analytical Engines",
-    "industry": "Software",
-    "location": "London",
-    "website_url": "https://example.com",
-    "email": "ada@example.com",
-    "source": "import",
-    "status": "new"
-  }' | jq -r '.id')
-
-# 2) Ingest website content for the lead
-curl -X POST "http://localhost:8000/api/v1/leads/${LEAD_ID}/ingest-website"
-
-# 3) List snapshots stored for that lead
-curl "http://localhost:8000/api/v1/leads/${LEAD_ID}/snapshots"
-
-# 4) Run Agent 1 on the latest snapshot and persist output to email_drafts.agent1_output
-curl -X POST "http://localhost:8000/api/v1/leads/${LEAD_ID}/run-agent1"
-
-# 5) Run Agent 2 to generate subject/email draft
-curl -X POST "http://localhost:8000/api/v1/leads/${LEAD_ID}/run-agent2"
-
-# 6) Run Agent 3 verifier (updates latest draft with decision + final_email)
-curl -X POST "http://localhost:8000/api/v1/leads/${LEAD_ID}/run-agent3"
-
-# 7) Get latest snapshot + agent outputs + latest verifier context
-curl "http://localhost:8000/api/v1/leads/${LEAD_ID}/latest-context"
+  -d '{"name":"Acme Workspace"}'
 ```
 
-Create an email draft:
+Create user in workspace (must match request workspace header):
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/leads/{lead_id}/drafts \
+curl -X POST http://localhost:8000/api/v1/workspaces/<workspace_uuid>/users \
   -H "Content-Type: application/json" \
-  -d '{
-    "subject": "Quick intro",
-    "body": "Hi there, wanted to reach out...",
-    "decision": "draft",
-    "agent1_output": {"score": 0.82},
-    "agent3_verdict": {"approved": true}
-  }'
+  -H "X-Workspace-Id: <workspace_uuid>" \
+  -H "X-User-Id: <user_uuid>" \
+  -d '{"email":"owner@acme.com","name":"Owner","role":"owner"}'
 ```
-## Easy Command to test entire backend
-```bash 
+
+## Pipeline Example (Scoped)
+
+```bash
 BASE="http://localhost:8000"
+WORKSPACE_ID="<workspace_uuid>"
+USER_ID="<user_uuid>"
 
 LEAD_ID=$(curl -s -X POST "$BASE/api/v1/leads" \
   -H "Content-Type: application/json" \
-  -d '{"name":"Stoble Coffee","title":"Owner","company":"Stoble Coffee","industry":"Hospitality","location":"Chico, CA","website_url":"https://stoblecoffee.com/","email":"contact@stoblecoffee.com","source":"manual","status":"new"}' \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "X-User-Id: $USER_ID" \
+  -d '{
+    "name":"Ada Lovelace",
+    "title":"CTO",
+    "company":"Analytical Engines",
+    "industry":"Software",
+    "location":"London",
+    "website_url":"https://example.com",
+    "email":"ada@example.com",
+    "source":"manual",
+    "status":"new"
+  }' | jq -r '.id')
 
-echo "LEAD_ID=$LEAD_ID"
+# ingest website
+curl -s -X POST "$BASE/api/v1/leads/$LEAD_ID/ingest-website" \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "X-User-Id: $USER_ID" | jq
 
-echo "== ingest-website =="
-curl -s -X POST "$BASE/api/v1/leads/$LEAD_ID/ingest-website" | python3 -m json.tool
+# run agent1
+curl -s -X POST "$BASE/api/v1/leads/$LEAD_ID/run-agent1" \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "X-User-Id: $USER_ID" | jq
 
-echo "== run-agent1 =="
-curl -s -X POST "$BASE/api/v1/leads/$LEAD_ID/run-agent1" | python3 -m json.tool
+# run agent2
+curl -s -X POST "$BASE/api/v1/leads/$LEAD_ID/run-agent2" \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "X-User-Id: $USER_ID" | jq
 
-echo "== run-agent2 =="
-curl -s -X POST "$BASE/api/v1/leads/$LEAD_ID/run-agent2" | python3 -m json.tool
+# run agent3
+curl -s -X POST "$BASE/api/v1/leads/$LEAD_ID/run-agent3" \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "X-User-Id: $USER_ID" | jq
 
-echo "== run-agent3 =="
-curl -s -X POST "$BASE/api/v1/leads/$LEAD_ID/run-agent3" | python3 -m json.tool
+# list snapshots + drafts + latest context
+curl -s "$BASE/api/v1/leads/$LEAD_ID/snapshots" \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "X-User-Id: $USER_ID" | jq
 
-echo "== latest-context =="
-curl -s "$BASE/api/v1/leads/$LEAD_ID/latest-context" | python3 -m json.tool
+curl -s "$BASE/api/v1/leads/$LEAD_ID/drafts" \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "X-User-Id: $USER_ID" | jq
+
+curl -s "$BASE/api/v1/leads/$LEAD_ID/latest-context" \
+  -H "X-Workspace-Id: $WORKSPACE_ID" \
+  -H "X-User-Id: $USER_ID" | jq
+```
+
+## Lead Import Workflow
+
+Import leads in bulk (workspace-scoped, with dedupe + row-level errors):
+
+```bash
+curl -X POST http://localhost:8000/api/v1/leads/imports \
+  -H "Content-Type: application/json" \
+  -H "X-Workspace-Id: <workspace_uuid>" \
+  -H "X-User-Id: <user_uuid>" \
+  -d '{
+    "source": "google_places",
+    "items": [
+      {
+        "name": "Acme Plumbing",
+        "company": "Acme Plumbing",
+        "industry": "plumber",
+        "location": "Chico, CA",
+        "website_url": "https://acmeplumbing.example",
+        "source": "google_places"
+      }
+    ],
+    "dedupe_by_website": true,
+    "dedupe_by_company_location": true
+  }'
+```
+
+`crawler.py` now outputs this payload shape:
+
+```bash
+GOOGLE_MAPS_API_KEY=<key> python crawler.py --output crawler_output.json
 ```

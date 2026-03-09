@@ -20,6 +20,7 @@ class WebsiteSnapshotRead(WebsiteSnapshotBase):
 
     id: UUID
     lead_id: UUID
+    workspace_id: UUID
     fetched_at: datetime
     created_at: datetime
     updated_at: datetime

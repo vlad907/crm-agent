@@ -484,9 +484,13 @@ pre {
   border: 1px solid #21324d;
   padding: 13px;
   border-radius: 11px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   font-size: 12px;
   line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .snapshot-text {
@@ -504,6 +508,7 @@ pre {
   border: 1px solid #d8e2ef;
   border-radius: 11px;
   background: #fcfdff;
+  overflow-wrap: anywhere;
 }
 
 .kv strong {

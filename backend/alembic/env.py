@@ -13,8 +13,12 @@ sys.path.append(str(project_root))
 from app.core.config import settings  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.models.email_draft import EmailDraft  # noqa: F401,E402
+from app.models.integration_account import IntegrationAccount  # noqa: F401,E402
 from app.models.lead import Lead  # noqa: F401,E402
+from app.models.oauth_token import OAuthToken  # noqa: F401,E402
+from app.models.user import User  # noqa: F401,E402
 from app.models.website_snapshot import WebsiteSnapshot  # noqa: F401,E402
+from app.models.workspace import Workspace  # noqa: F401,E402
 
 config = context.config
 

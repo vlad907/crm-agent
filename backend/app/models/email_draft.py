@@ -12,12 +12,19 @@ from app.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.lead import Lead
+    from app.models.workspace import Workspace
 
 
 class EmailDraft(TimestampMixin, Base):
     __tablename__ = "email_drafts"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     lead_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("leads.id", ondelete="CASCADE"),
@@ -30,5 +37,5 @@ class EmailDraft(TimestampMixin, Base):
     agent3_verdict: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     decision: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
 
+    workspace: Mapped["Workspace"] = relationship(back_populates="drafts")
     lead: Mapped["Lead"] = relationship(back_populates="drafts")
-

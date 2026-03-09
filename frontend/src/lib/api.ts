@@ -2,14 +2,19 @@ import {
   Agent1RunResult,
   Agent3RunResult,
   CreateLeadPayload,
+  DevLoginPayload,
+  DevLoginResult,
   Draft,
   Lead,
+  LeadImportPayload,
+  LeadImportResponse,
   LeadListResponse,
   LatestContext,
   WebsiteIngestResult
 } from "@/src/lib/types";
+import { getUserId, getWorkspaceId } from "@/src/lib/identity";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
+export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
 
 export class ApiError extends Error {
   status: number;
@@ -23,13 +28,33 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+type ApiFetchInit = RequestInit & {
+  requireIdentity?: boolean;
+};
+
+export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T> {
+  const { requireIdentity = true, ...fetchInit } = init ?? {};
+  const headers = new Headers(fetchInit.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const workspaceId = (headers.get("X-Workspace-Id") ?? "").trim() || getWorkspaceId();
+  const userId = (headers.get("X-User-Id") ?? "").trim() || getUserId();
+  if (requireIdentity && (!workspaceId || !userId)) {
+    throw new ApiError("Missing Workspace/User ID. Set them in Settings.", 400);
+  }
+
+  if (workspaceId) {
+    headers.set("X-Workspace-Id", workspaceId);
+  }
+  if (userId) {
+    headers.set("X-User-Id", userId);
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    },
+    ...fetchInit,
+    headers,
     cache: "no-store"
   });
 
@@ -78,6 +103,13 @@ export function createLead(payload: CreateLeadPayload): Promise<Lead> {
   });
 }
 
+export function importLeads(payload: LeadImportPayload): Promise<LeadImportResponse> {
+  return apiFetch<LeadImportResponse>("/api/v1/leads/imports", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getLead(id: string): Promise<Lead> {
   return apiFetch<Lead>(`/api/v1/leads/${id}`);
 }
@@ -112,4 +144,12 @@ export function getLatestContext(id: string): Promise<LatestContext> {
 
 export function getLeadDrafts(id: string, limit = 20, offset = 0): Promise<Draft[]> {
   return apiFetch<Draft[]>(`/api/v1/leads/${id}/drafts?limit=${limit}&offset=${offset}`);
+}
+
+export function devLogin(payload: DevLoginPayload): Promise<DevLoginResult> {
+  return apiFetch<DevLoginResult>("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    requireIdentity: false
+  });
 }

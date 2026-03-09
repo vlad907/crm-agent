@@ -84,6 +84,20 @@ export interface Agent3RunResult {
   [key: string]: unknown;
 }
 
+export interface DevLoginPayload {
+  email: string;
+  name?: string | null;
+}
+
+export interface DevLoginResult {
+  workspace_id: string;
+  user_id: string;
+  email: string;
+  name?: string | null;
+  created: boolean;
+  [key: string]: unknown;
+}
+
 export interface CreateLeadPayload {
   name: string;
   company: string;
@@ -95,4 +109,50 @@ export interface CreateLeadPayload {
   industry?: string | null;
   title?: string | null;
   [key: string]: unknown;
+}
+
+export interface LeadImportItem {
+  name?: string | null;
+  title?: string | null;
+  company?: string | null;
+  industry?: string | null;
+  location?: string | null;
+  website_url?: string | null;
+  email?: string | null;
+  source?: string | null;
+  status?: string | null;
+}
+
+export interface LeadImportPayload {
+  source: string;
+  items: LeadImportItem[];
+  dedupe_by_website?: boolean;
+  dedupe_by_company_location?: boolean;
+}
+
+export interface LeadImportDuplicate {
+  row_index: number;
+  reason: string;
+  company?: string | null;
+  location?: string | null;
+  website_url?: string | null;
+}
+
+export interface LeadImportError {
+  row_index: number;
+  reason: string;
+  company?: string | null;
+  location?: string | null;
+  website_url?: string | null;
+}
+
+export interface LeadImportResponse {
+  source: string;
+  total_received: number;
+  imported_count: number;
+  duplicate_count: number;
+  error_count: number;
+  imported: Lead[];
+  duplicates: LeadImportDuplicate[];
+  errors: LeadImportError[];
 }

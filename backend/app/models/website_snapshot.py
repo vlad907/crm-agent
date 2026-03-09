@@ -13,12 +13,19 @@ from app.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.lead import Lead
+    from app.models.workspace import Workspace
 
 
 class WebsiteSnapshot(TimestampMixin, Base):
     __tablename__ = "website_snapshots"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     lead_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("leads.id", ondelete="CASCADE"),
@@ -33,5 +40,5 @@ class WebsiteSnapshot(TimestampMixin, Base):
         server_default=func.now(),
     )
 
+    workspace: Mapped["Workspace"] = relationship(back_populates="snapshots")
     lead: Mapped["Lead"] = relationship(back_populates="snapshots")
-

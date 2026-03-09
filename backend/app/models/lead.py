@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String
+from sqlalchemy import ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -12,6 +12,7 @@ from app.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.email_draft import EmailDraft
+    from app.models.workspace import Workspace
     from app.models.website_snapshot import WebsiteSnapshot
 
 
@@ -19,6 +20,12 @@ class Lead(TimestampMixin, Base):
     __tablename__ = "leads"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     company: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
@@ -29,6 +36,7 @@ class Lead(TimestampMixin, Base):
     source: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="new", index=True)
 
+    workspace: Mapped["Workspace"] = relationship(back_populates="leads")
     snapshots: Mapped[list["WebsiteSnapshot"]] = relationship(
         back_populates="lead",
         cascade="all, delete-orphan",
@@ -39,4 +47,3 @@ class Lead(TimestampMixin, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-

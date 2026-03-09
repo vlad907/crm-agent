@@ -26,6 +26,8 @@ class Settings(BaseSettings):
         default=1.0,
         alias="OPENAI_RATE_LIMIT_BACKOFF_SECONDS",
     )
+    default_workspace_id: str | None = Field(default=None, alias="DEFAULT_WORKSPACE_ID")
+    default_user_id: str | None = Field(default=None, alias="DEFAULT_USER_ID")
 
     api_prefix: str = "/api/v1"
 

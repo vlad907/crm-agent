@@ -9,6 +9,8 @@ from pydantic import HttpUrl, TypeAdapter, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.deps.request_context import RequestContext, get_request_context
+from app.api.deps.scoping import require_scoped_lead
 from app.db.session import get_db
 from app.models.email_draft import EmailDraft
 from app.models.lead import Lead
@@ -16,8 +18,18 @@ from app.models.website_snapshot import WebsiteSnapshot
 from app.schemas.agent1 import Agent1RunResponse, LatestContextResponse, LatestContextSnapshot
 from app.schemas.agent3 import FinalEmailRead
 from app.schemas.email_draft import EmailDraftRead
-from app.schemas.lead import LeadCreate, LeadListResponse, LeadRead, LeadUpdate
+from app.schemas.lead import (
+    LeadCreate,
+    LeadImportDuplicate,
+    LeadImportError,
+    LeadImportRequest,
+    LeadImportResponse,
+    LeadListResponse,
+    LeadRead,
+    LeadUpdate,
+)
 from app.schemas.website_snapshot import WebsiteSnapshotIngestRead
+from app.services.lead_import import LeadImportCandidate, import_leads_for_workspace
 from app.services.openai_client import OpenAIClientError, OpenAIRateLimitError, run_agent1, run_agent2
 from app.services.scrape import WebsiteFetchError, extract_text, fetch_html
 
@@ -27,35 +39,97 @@ http_url_adapter = TypeAdapter(HttpUrl)
 
 
 @router.post("", response_model=LeadRead, status_code=status.HTTP_201_CREATED)
-def create_lead(payload: LeadCreate, db: Session = Depends(get_db)) -> Lead:
-    lead = Lead(**payload.model_dump())
+def create_lead(
+    payload: LeadCreate,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
+) -> Lead:
+    lead = Lead(workspace_id=ctx.workspace_id, **payload.model_dump())
     db.add(lead)
     db.commit()
     db.refresh(lead)
     return lead
 
 
+@router.post("/imports", response_model=LeadImportResponse)
+def import_leads(
+    payload: LeadImportRequest,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
+) -> LeadImportResponse:
+    candidates = [
+        LeadImportCandidate(
+            row_index=index,
+            name=item.name,
+            title=item.title,
+            company=item.company,
+            industry=item.industry,
+            location=item.location,
+            website_url=item.website_url,
+            email=item.email,
+            source=item.source,
+            status=item.status,
+        )
+        for index, item in enumerate(payload.items)
+    ]
+
+    result = import_leads_for_workspace(
+        db=db,
+        workspace_id=ctx.workspace_id,
+        candidates=candidates,
+        default_source=payload.source,
+        dedupe_by_website=payload.dedupe_by_website,
+        dedupe_by_company_location=payload.dedupe_by_company_location,
+    )
+
+    return LeadImportResponse(
+        source=payload.source,
+        total_received=len(payload.items),
+        imported_count=len(result.imported),
+        duplicate_count=len(result.duplicates),
+        error_count=len(result.errors),
+        imported=result.imported,
+        duplicates=[
+            LeadImportDuplicate(
+                row_index=item.row_index,
+                reason=item.reason,
+                company=item.company,
+                location=item.location,
+                website_url=item.website_url,
+            )
+            for item in result.duplicates
+        ],
+        errors=[
+            LeadImportError(
+                row_index=item.row_index,
+                reason=item.reason,
+                company=item.company,
+                location=item.location,
+                website_url=item.website_url,
+            )
+            for item in result.errors
+        ],
+    )
+
+
 @router.get("", response_model=LeadListResponse)
 def list_leads(
     db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     status_filter: str | None = Query(default=None, alias="status"),
     query: str | None = Query(default=None, alias="q", min_length=1),
 ) -> LeadListResponse:
-    filters = []
+    filters = [Lead.workspace_id == ctx.workspace_id]
 
     if status_filter:
         filters.append(Lead.status == status_filter)
     if query:
         filters.append(Lead.company.ilike(f"%{query}%"))
 
-    list_stmt = select(Lead).order_by(Lead.created_at.desc()).offset(offset).limit(limit)
-    count_stmt = select(func.count()).select_from(Lead)
-
-    if filters:
-        list_stmt = list_stmt.where(*filters)
-        count_stmt = count_stmt.where(*filters)
+    list_stmt = select(Lead).where(*filters).order_by(Lead.created_at.desc()).offset(offset).limit(limit)
+    count_stmt = select(func.count()).select_from(Lead).where(*filters)
 
     items = db.scalars(list_stmt).all()
     total = db.scalar(count_stmt) or 0
@@ -63,18 +137,22 @@ def list_leads(
 
 
 @router.get("/{lead_id}", response_model=LeadRead)
-def get_lead(lead_id: UUID, db: Session = Depends(get_db)) -> Lead:
-    lead = db.get(Lead, lead_id)
-    if lead is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
-    return lead
+def get_lead(
+    lead_id: UUID,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
+) -> Lead:
+    return require_scoped_lead(db=db, lead_id=lead_id, workspace_id=ctx.workspace_id)
 
 
 @router.patch("/{lead_id}", response_model=LeadRead)
-def update_lead(lead_id: UUID, payload: LeadUpdate, db: Session = Depends(get_db)) -> Lead:
-    lead = db.get(Lead, lead_id)
-    if lead is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+def update_lead(
+    lead_id: UUID,
+    payload: LeadUpdate,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
+) -> Lead:
+    lead = require_scoped_lead(db=db, lead_id=lead_id, workspace_id=ctx.workspace_id)
 
     updates = payload.model_dump(exclude_unset=True)
     for field, value in updates.items():
@@ -90,10 +168,12 @@ def update_lead(lead_id: UUID, payload: LeadUpdate, db: Session = Depends(get_db
     response_model=WebsiteSnapshotIngestRead,
     status_code=status.HTTP_201_CREATED,
 )
-def ingest_website(lead_id: UUID, db: Session = Depends(get_db)) -> WebsiteSnapshotIngestRead:
-    lead = db.get(Lead, lead_id)
-    if lead is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+def ingest_website(
+    lead_id: UUID,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
+) -> WebsiteSnapshotIngestRead:
+    lead = require_scoped_lead(db=db, lead_id=lead_id, workspace_id=ctx.workspace_id)
 
     if not lead.website_url or not lead.website_url.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Lead website_url is missing")
@@ -118,6 +198,7 @@ def ingest_website(lead_id: UUID, db: Session = Depends(get_db)) -> WebsiteSnaps
     logger.info("Website text extracted lead_id=%s length=%s", lead_id, len(raw_text))
 
     snapshot = WebsiteSnapshot(
+        workspace_id=ctx.workspace_id,
         lead_id=lead.id,
         url=normalized_url,
         raw_text=raw_text,
@@ -139,14 +220,16 @@ def ingest_website(lead_id: UUID, db: Session = Depends(get_db)) -> WebsiteSnaps
     response_model=Agent1RunResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def run_agent1_for_lead(lead_id: UUID, db: Session = Depends(get_db)) -> Agent1RunResponse:
-    lead = db.get(Lead, lead_id)
-    if lead is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+def run_agent1_for_lead(
+    lead_id: UUID,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
+) -> Agent1RunResponse:
+    lead = require_scoped_lead(db=db, lead_id=lead_id, workspace_id=ctx.workspace_id)
 
     latest_snapshot = db.scalar(
         select(WebsiteSnapshot)
-        .where(WebsiteSnapshot.lead_id == lead_id)
+        .where(WebsiteSnapshot.lead_id == lead_id, WebsiteSnapshot.workspace_id == ctx.workspace_id)
         .order_by(WebsiteSnapshot.fetched_at.desc(), WebsiteSnapshot.created_at.desc())
         .limit(1)
     )
@@ -162,6 +245,7 @@ def run_agent1_for_lead(lead_id: UUID, db: Session = Depends(get_db)) -> Agent1R
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Agent1 failed: {exc}") from exc
 
     draft = EmailDraft(
+        workspace_id=ctx.workspace_id,
         lead_id=lead_id,
         subject=f"Agent1 draft for {lead.company}",
         body=f"Auto-generated Agent1 analysis from website snapshot {latest_snapshot.id}.",
@@ -184,14 +268,16 @@ def run_agent1_for_lead(lead_id: UUID, db: Session = Depends(get_db)) -> Agent1R
     response_model=EmailDraftRead,
     status_code=status.HTTP_201_CREATED,
 )
-def run_agent2_for_lead(lead_id: UUID, db: Session = Depends(get_db)) -> EmailDraft:
-    lead = db.get(Lead, lead_id)
-    if lead is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+def run_agent2_for_lead(
+    lead_id: UUID,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
+) -> EmailDraft:
+    lead = require_scoped_lead(db=db, lead_id=lead_id, workspace_id=ctx.workspace_id)
 
     latest_snapshot = db.scalar(
         select(WebsiteSnapshot)
-        .where(WebsiteSnapshot.lead_id == lead_id)
+        .where(WebsiteSnapshot.lead_id == lead_id, WebsiteSnapshot.workspace_id == ctx.workspace_id)
         .order_by(WebsiteSnapshot.fetched_at.desc(), WebsiteSnapshot.created_at.desc())
         .limit(1)
     )
@@ -200,7 +286,11 @@ def run_agent2_for_lead(lead_id: UUID, db: Session = Depends(get_db)) -> EmailDr
 
     latest_agent1_draft = db.scalar(
         select(EmailDraft)
-        .where(EmailDraft.lead_id == lead_id, EmailDraft.agent1_output.is_not(None))
+        .where(
+            EmailDraft.lead_id == lead_id,
+            EmailDraft.workspace_id == ctx.workspace_id,
+            EmailDraft.agent1_output.is_not(None),
+        )
         .order_by(EmailDraft.created_at.desc())
         .limit(1)
     )
@@ -222,6 +312,7 @@ def run_agent2_for_lead(lead_id: UUID, db: Session = Depends(get_db)) -> EmailDr
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Agent2 failed: {exc}") from exc
 
     draft = EmailDraft(
+        workspace_id=ctx.workspace_id,
         lead_id=lead_id,
         subject=agent2_output["subject"][:255],
         body=agent2_output["email_body"],
@@ -237,14 +328,16 @@ def run_agent2_for_lead(lead_id: UUID, db: Session = Depends(get_db)) -> EmailDr
 
 
 @router.get("/{lead_id}/latest-context", response_model=LatestContextResponse)
-def get_latest_context(lead_id: UUID, db: Session = Depends(get_db)) -> LatestContextResponse:
-    lead = db.get(Lead, lead_id)
-    if lead is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+def get_latest_context(
+    lead_id: UUID,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
+) -> LatestContextResponse:
+    require_scoped_lead(db=db, lead_id=lead_id, workspace_id=ctx.workspace_id)
 
     latest_snapshot = db.scalar(
         select(WebsiteSnapshot)
-        .where(WebsiteSnapshot.lead_id == lead_id)
+        .where(WebsiteSnapshot.lead_id == lead_id, WebsiteSnapshot.workspace_id == ctx.workspace_id)
         .order_by(WebsiteSnapshot.fetched_at.desc(), WebsiteSnapshot.created_at.desc())
         .limit(1)
     )
@@ -253,7 +346,11 @@ def get_latest_context(lead_id: UUID, db: Session = Depends(get_db)) -> LatestCo
 
     latest_agent1_draft = db.scalar(
         select(EmailDraft)
-        .where(EmailDraft.lead_id == lead_id, EmailDraft.agent1_output.is_not(None))
+        .where(
+            EmailDraft.lead_id == lead_id,
+            EmailDraft.workspace_id == ctx.workspace_id,
+            EmailDraft.agent1_output.is_not(None),
+        )
         .order_by(EmailDraft.created_at.desc())
         .limit(1)
     )
@@ -261,6 +358,7 @@ def get_latest_context(lead_id: UUID, db: Session = Depends(get_db)) -> LatestCo
         select(EmailDraft)
         .where(
             EmailDraft.lead_id == lead_id,
+            EmailDraft.workspace_id == ctx.workspace_id,
             EmailDraft.agent3_verdict.is_not(None),
             EmailDraft.decision.in_(["send", "hold"]),
         )

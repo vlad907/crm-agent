@@ -7,9 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps.request_context import RequestContext, get_request_context
+from app.api.deps.scoping import require_scoped_lead
 from app.db.session import get_db
 from app.models.email_draft import EmailDraft
-from app.models.lead import Lead
 from app.models.website_snapshot import WebsiteSnapshot
 from app.schemas.agent3 import Agent3RunResponse, FinalEmailRead
 from app.services.agent3_verifier import Agent3RateLimitError, Agent3VerifierError, verify_email_with_agent3
@@ -19,14 +20,16 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/run-agent3", response_model=Agent3RunResponse, status_code=status.HTTP_200_OK)
-def run_agent3_for_lead(lead_id: UUID, db: Session = Depends(get_db)) -> Agent3RunResponse:
-    lead = db.get(Lead, lead_id)
-    if lead is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+def run_agent3_for_lead(
+    lead_id: UUID,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
+) -> Agent3RunResponse:
+    lead = require_scoped_lead(db=db, lead_id=lead_id, workspace_id=ctx.workspace_id)
 
     latest_snapshot = db.scalar(
         select(WebsiteSnapshot)
-        .where(WebsiteSnapshot.lead_id == lead_id)
+        .where(WebsiteSnapshot.lead_id == lead_id, WebsiteSnapshot.workspace_id == ctx.workspace_id)
         .order_by(WebsiteSnapshot.fetched_at.desc(), WebsiteSnapshot.created_at.desc())
         .limit(1)
     )
@@ -35,7 +38,7 @@ def run_agent3_for_lead(lead_id: UUID, db: Session = Depends(get_db)) -> Agent3R
 
     recent_drafts = db.scalars(
         select(EmailDraft)
-        .where(EmailDraft.lead_id == lead_id)
+        .where(EmailDraft.lead_id == lead_id, EmailDraft.workspace_id == ctx.workspace_id)
         .order_by(EmailDraft.created_at.desc())
         .limit(25)
     ).all()
@@ -60,7 +63,11 @@ def run_agent3_for_lead(lead_id: UUID, db: Session = Depends(get_db)) -> Agent3R
 
     latest_agent1_draft = db.scalar(
         select(EmailDraft)
-        .where(EmailDraft.lead_id == lead_id, EmailDraft.agent1_output.is_not(None))
+        .where(
+            EmailDraft.lead_id == lead_id,
+            EmailDraft.workspace_id == ctx.workspace_id,
+            EmailDraft.agent1_output.is_not(None),
+        )
         .order_by(EmailDraft.created_at.desc())
         .limit(1)
     )

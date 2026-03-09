@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { IdentityBanner } from "@/src/components/IdentityBanner";
+
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,10 +27,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/leads/new" className="nav-link">
                 New Lead
               </Link>
+              <Link href="/settings" className="nav-link">
+                Settings
+              </Link>
+              <Link href="/login" className="nav-link">
+                Login
+              </Link>
             </nav>
           </div>
         </header>
-        <main className="container page">{children}</main>
+        <main className="container page">
+          <IdentityBanner />
+          {children}
+        </main>
       </body>
     </html>
   );
