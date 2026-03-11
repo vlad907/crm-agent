@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
 import { ApiError, createLead } from "@/src/lib/api";
+import { LeadStatus } from "@/src/lib/types";
 
 interface LeadFormState {
   name: string;
@@ -26,7 +27,7 @@ const initialState: LeadFormState = {
   email: "",
   location: "",
   industry: "",
-  status: "new",
+  status: "imported",
   source: "manual"
 };
 
@@ -68,7 +69,7 @@ export default function NewLeadPage() {
         email: form.email.trim() || null,
         location: form.location.trim() || null,
         industry: form.industry.trim() || null,
-        status: form.status || "new",
+        status: (form.status || "imported") as LeadStatus,
         source: form.source || "manual"
       });
       router.push(`/leads/${created.id}`);
@@ -156,7 +157,9 @@ export default function NewLeadPage() {
           <div className="row">
             <div className="field">
               <label htmlFor="status">Status</label>
-              <input id="status" value={form.status} onChange={(event) => updateField("status", event.target.value)} />
+              <select id="status" value={form.status} onChange={(event) => updateField("status", event.target.value)} disabled>
+                <option value="imported">imported</option>
+              </select>
             </div>
             <div className="field">
               <label htmlFor="source">Source</label>

@@ -553,6 +553,10 @@ button:disabled {
   gap: 10px;
 }
 
+.pipeline-lane-wide {
+  grid-template-columns: repeat(8, minmax(120px, 1fr));
+}
+
 .pipeline-stage {
   border: 1px solid #d8e2ef;
   border-radius: 12px;
@@ -593,6 +597,42 @@ button:disabled {
   display: inline-flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.pipeline-mini {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pipeline-flag {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #d2deed;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #4a5f78;
+  background: #f7fbff;
+}
+
+.pipeline-flag.done {
+  border-color: #9dd7be;
+  background: #ebf9f2;
+  color: #106e46;
+}
+
+.pipeline-flag.done-send {
+  border-color: #9dd7be;
+  background: #ebf9f2;
+  color: #106e46;
+}
+
+.pipeline-flag.done-hold {
+  border-color: #f3c28f;
+  background: #fff2e4;
+  color: #9a3412;
 }
 
 .action-btn {
@@ -724,6 +764,11 @@ th {
   background: #e8f0ff;
 }
 
+.status-research {
+  color: #0f5b8d;
+  background: #e6f4ff;
+}
+
 .status-send {
   color: #0f6e48;
   background: #dff8ea;
@@ -834,6 +879,10 @@ pre {
   }
 
   .pipeline-lane {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+
+  .pipeline-lane-wide {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
 

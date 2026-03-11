@@ -21,6 +21,7 @@ from app.models.user import User  # noqa: F401,E402
 from app.models.website_page import WebsitePage  # noqa: F401,E402
 from app.models.website_snapshot import WebsiteSnapshot  # noqa: F401,E402
 from app.models.workspace import Workspace  # noqa: F401,E402
+from app.models.workspace_ai_strategy import WorkspaceAIStrategy  # noqa: F401,E402
 from app.models.workspace_profile import WorkspaceProfile  # noqa: F401,E402
 from app.models.workspace_setting import WorkspaceSetting  # noqa: F401,E402
 

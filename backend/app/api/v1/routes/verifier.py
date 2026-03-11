@@ -11,6 +11,8 @@ from app.api.deps.request_context import RequestContext, get_request_context
 from app.api.deps.scoping import require_scoped_lead
 from app.db.session import get_db
 from app.models.email_draft import EmailDraft
+from app.models.lead_status import LEAD_STATUS_APPROVED, LEAD_STATUS_NEEDS_REVIEW
+from app.models.workspace_ai_strategy import WorkspaceAIStrategy
 from app.models.website_snapshot import WebsiteSnapshot
 from app.schemas.agent3 import Agent3RunResponse, FinalEmailRead
 from app.services.agent3_verifier import (
@@ -20,6 +22,7 @@ from app.services.agent3_verifier import (
     verify_email_with_agent3,
 )
 from app.services.workspace_credentials import resolve_openai_api_key
+from app.services.workspace_ai_strategy import build_strategy_context
 
 router = APIRouter(prefix="/leads/{lead_id}", tags=["Agent 3"])
 logger = logging.getLogger(__name__)
@@ -110,6 +113,7 @@ def run_agent3_for_lead(
     )
 
     logger.info("Agent3 run start lead_id=%s draft_id=%s", lead_id, latest_draft.id)
+    strategy_context = build_strategy_context(db.get(WorkspaceAIStrategy, ctx.workspace_id))
     try:
         verdict = verify_email_with_agent3(
             lead_name=lead.name,
@@ -119,6 +123,7 @@ def run_agent3_for_lead(
             agent1_output=latest_agent1_draft.agent1_output,
             draft_subject=latest_draft.subject,
             draft_body=latest_draft.body,
+            strategy_context=strategy_context,
             api_key=openai_api_key,
         )
     except Agent3ConfigurationError as exc:
@@ -137,6 +142,14 @@ def run_agent3_for_lead(
     latest_draft.decision = verdict["decision"]
     latest_draft.subject = final_email["subject"][:255]
     latest_draft.body = final_email["email_body"]
+    decision = str(verdict.get("decision") or "").strip().lower()
+    if decision in {"send", "approved"}:
+        lead.status = LEAD_STATUS_APPROVED
+    else:
+        lead.status = LEAD_STATUS_NEEDS_REVIEW
+    latest_draft.review_status = "pending_review"
+    latest_draft.approved_at = None
+    latest_draft.rejected_at = None
 
     db.commit()
     db.refresh(latest_draft)

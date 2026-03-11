@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { Spinner } from "@/src/components/Spinner";
-import { LeadStage, resolveLeadPipeline, stageLabel } from "@/src/lib/leadPipeline";
+import { resolveLeadPipeline, stageLabel } from "@/src/lib/leadPipeline";
 import { Lead } from "@/src/lib/types";
 
 type SortColumn = "company" | "status" | "updated_at";
@@ -33,14 +33,17 @@ function toLocalDate(value?: string): string {
 }
 
 function statusClass(stage: string): string {
-  if (stage === "ready" || stage === "sent") {
+  if (stage === "approved" || stage === "sent" || stage === "replied" || stage === "converted") {
     return "status-badge status-send";
   }
-  if (stage === "hold") {
+  if (stage === "needs_review" || stage === "archived") {
     return "status-badge status-hold";
   }
-  if (stage === "agent2" || stage === "agent3") {
+  if (stage === "drafting" || stage === "draft_ready") {
     return "status-badge status-draft";
+  }
+  if (stage === "researching" || stage === "researched") {
+    return "status-badge status-research";
   }
   return "status-badge status-new";
 }
@@ -50,7 +53,7 @@ function getRunAiDisabledReason(lead: Lead): string | null {
   if (!summary.has_snapshot && !lead.website_url) {
     return "Website URL required before AI pipeline can start.";
   }
-  if (summary.computed_stage === "ready" || summary.computed_stage === "hold" || summary.computed_stage === "sent") {
+  if (["approved", "needs_review", "sent", "replied", "converted", "archived"].includes(summary.computed_stage)) {
     return "Pipeline already completed for this lead.";
   }
   return null;
@@ -165,7 +168,7 @@ export function LeadListTable({
                     <strong>{lead.company}</strong>
                   </td>
                   <td>
-                    <span className={statusClass(summary.computed_stage)}>{stageLabel(summary.computed_stage as LeadStage)}</span>
+                    <span className={statusClass(summary.computed_stage)}>{stageLabel(summary.computed_stage)}</span>
                   </td>
                   <td>
                     <div className="pipeline-mini">
@@ -182,7 +185,7 @@ export function LeadListTable({
                               : ""
                         }`}
                       >
-                        {summary.final_decision === "send" ? "Ready" : summary.final_decision === "hold" ? "Hold" : "-"}
+                        {summary.final_decision === "send" ? "Approved" : summary.final_decision === "hold" ? "Review" : "-"}
                       </span>
                     </div>
                   </td>

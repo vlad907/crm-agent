@@ -1,9 +1,25 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+LeadStatus = Literal[
+    "discovered",
+    "imported",
+    "researching",
+    "researched",
+    "drafting",
+    "draft_ready",
+    "needs_review",
+    "approved",
+    "sent",
+    "replied",
+    "converted",
+    "archived",
+]
 
 
 class LeadBase(BaseModel):
@@ -16,7 +32,7 @@ class LeadBase(BaseModel):
     website_url: str | None = Field(default=None, max_length=500)
     email: EmailStr | None = None
     source: str = Field(min_length=1, max_length=100)
-    status: str = Field(default="new", min_length=1, max_length=50)
+    status: LeadStatus = "imported"
 
 
 class LeadCreate(LeadBase):
@@ -33,7 +49,16 @@ class LeadUpdate(BaseModel):
     website_url: str | None = Field(default=None, max_length=500)
     email: EmailStr | None = None
     source: str | None = Field(default=None, min_length=1, max_length=100)
-    status: str | None = Field(default=None, min_length=1, max_length=50)
+    status: LeadStatus | None = None
+
+
+class LeadPipelineSummary(BaseModel):
+    has_snapshot: bool = False
+    has_agent1_output: bool = False
+    has_draft: bool = False
+    has_agent3_verdict: bool = False
+    final_decision: str | None = None
+    computed_stage: LeadStatus = "imported"
 
 
 class LeadRead(LeadBase):
@@ -43,16 +68,7 @@ class LeadRead(LeadBase):
     workspace_id: UUID
     created_at: datetime
     updated_at: datetime
-    pipeline_summary: "LeadPipelineSummary | None" = None
-
-
-class LeadPipelineSummary(BaseModel):
-    has_snapshot: bool = False
-    has_agent1_output: bool = False
-    has_draft: bool = False
-    has_agent3_verdict: bool = False
-    final_decision: str | None = None
-    computed_stage: str = "new"
+    pipeline_summary: LeadPipelineSummary | None = None
 
 
 class LeadListResponse(BaseModel):
@@ -71,7 +87,7 @@ class LeadImportItem(BaseModel):
     website_url: str | None = Field(default=None, max_length=500)
     email: str | None = Field(default=None, max_length=255)
     source: str | None = Field(default=None, max_length=100)
-    status: str | None = Field(default=None, max_length=50)
+    status: LeadStatus | None = None
 
 
 class LeadImportRequest(BaseModel):

@@ -1,5 +1,5 @@
 import { Lead } from "@/src/lib/types";
-import { LeadStage, resolveLeadPipeline, stageLabel } from "@/src/lib/leadPipeline";
+import { resolveLeadPipeline, stageLabel } from "@/src/lib/leadPipeline";
 
 interface LeadSummaryCardProps {
   lead: Lead | null;
@@ -8,16 +8,20 @@ interface LeadSummaryCardProps {
 
 function statusClass(status?: string): string {
   switch ((status ?? "").toLowerCase()) {
-    case "ready":
-    case "send":
+    case "approved":
     case "sent":
+    case "replied":
+    case "converted":
       return "status-badge status-send";
-    case "hold":
+    case "needs_review":
+    case "archived":
       return "status-badge status-hold";
-    case "agent2":
-    case "agent3":
-    case "draft":
+    case "drafting":
+    case "draft_ready":
       return "status-badge status-draft";
+    case "researching":
+    case "researched":
+      return "status-badge status-research";
     default:
       return "status-badge status-new";
   }
@@ -32,14 +36,14 @@ function toLocalDate(value?: string): string {
 }
 
 export function LeadSummaryCard({ lead, loading }: LeadSummaryCardProps) {
-  const stage = lead ? resolveLeadPipeline(lead).computed_stage : "new";
+  const stage = lead ? resolveLeadPipeline(lead).computed_stage : "imported";
 
   return (
     <section className="card stack">
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
         <h2>Lead Profile</h2>
         <div className="inline-actions">
-          {lead ? <span className={statusClass(stage)}>{stageLabel(stage as LeadStage)}</span> : null}
+          {lead ? <span className={statusClass(stage)}>{stageLabel(stage)}</span> : null}
           <button type="button" className="btn-danger" disabled title="Delete flow coming soon">
             Delete Lead
           </button>
@@ -59,7 +63,7 @@ export function LeadSummaryCard({ lead, loading }: LeadSummaryCardProps) {
           </div>
           <div className="kv">
             <strong>Current Stage</strong>
-            {stageLabel(stage as LeadStage)}
+            {stageLabel(stage)}
           </div>
           <div className="kv">
             <strong>Website</strong>

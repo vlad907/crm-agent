@@ -1,43 +1,61 @@
-import { Lead, LeadPipelineSummary } from "@/src/lib/types";
+import { Lead, LeadPipelineSummary, LeadStatus } from "@/src/lib/types";
 
-export type LeadStage = "new" | "ingested" | "agent1" | "agent2" | "agent3" | "ready" | "hold" | "sent";
+export type LeadStage = LeadStatus;
+export interface ResolvedLeadPipeline extends Omit<LeadPipelineSummary, "computed_stage"> {
+  computed_stage: LeadStage;
+}
 
-const EMPTY_SUMMARY: LeadPipelineSummary = {
+const EMPTY_SUMMARY: ResolvedLeadPipeline = {
   has_snapshot: false,
   has_agent1_output: false,
   has_draft: false,
   has_agent3_verdict: false,
   final_decision: null,
-  computed_stage: "new",
+  computed_stage: "imported",
 };
 
 function normalizeStage(value: string | undefined): LeadStage {
   const normalized = (value ?? "").toLowerCase();
+  if (normalized === "discovered") {
+    return "discovered";
+  }
+  if (normalized === "imported" || normalized === "new") {
+    return "imported";
+  }
+  if (normalized === "researching") {
+    return "researching";
+  }
+  if (normalized === "researched" || normalized === "ingested" || normalized === "enriched" || normalized === "agent1") {
+    return "researched";
+  }
+  if (normalized === "drafting") {
+    return "drafting";
+  }
+  if (normalized === "draft_ready" || normalized === "agent2" || normalized === "agent3" || normalized === "verified" || normalized === "draft" || normalized === "drafted") {
+    return "draft_ready";
+  }
+  if (normalized === "needs_review" || normalized === "hold") {
+    return "needs_review";
+  }
+  if (normalized === "approved" || normalized === "ready" || normalized === "ready_to_send" || normalized === "send") {
+    return "approved";
+  }
   if (normalized === "sent") {
     return "sent";
   }
-  if (normalized === "ready" || normalized === "ready_to_send" || normalized === "send") {
-    return "ready";
+  if (normalized === "replied") {
+    return "replied";
   }
-  if (normalized === "hold") {
-    return "hold";
+  if (normalized === "converted") {
+    return "converted";
   }
-  if (normalized === "agent3" || normalized === "verified") {
-    return "agent3";
+  if (normalized === "archived") {
+    return "archived";
   }
-  if (normalized === "agent2" || normalized === "draft" || normalized === "drafted") {
-    return "agent2";
-  }
-  if (normalized === "agent1") {
-    return "agent1";
-  }
-  if (normalized === "ingested" || normalized === "enriched") {
-    return "ingested";
-  }
-  return "new";
+  return "imported";
 }
 
-export function resolveLeadPipeline(lead: Lead): LeadPipelineSummary {
+export function resolveLeadPipeline(lead: Lead): ResolvedLeadPipeline {
   if (lead.pipeline_summary) {
     return {
       ...EMPTY_SUMMARY,
@@ -47,26 +65,60 @@ export function resolveLeadPipeline(lead: Lead): LeadPipelineSummary {
   }
 
   const stage = normalizeStage(lead.status);
-  const summary: LeadPipelineSummary = {
+  const summary: ResolvedLeadPipeline = {
     ...EMPTY_SUMMARY,
     computed_stage: stage,
   };
 
-  if (stage === "ingested" || stage === "agent1" || stage === "agent2" || stage === "agent3" || stage === "ready" || stage === "hold" || stage === "sent") {
+  if (
+    stage === "researched" ||
+    stage === "drafting" ||
+    stage === "draft_ready" ||
+    stage === "needs_review" ||
+    stage === "approved" ||
+    stage === "sent" ||
+    stage === "replied" ||
+    stage === "converted" ||
+    stage === "archived"
+  ) {
     summary.has_snapshot = true;
   }
-  if (stage === "agent1" || stage === "agent2" || stage === "agent3" || stage === "ready" || stage === "hold" || stage === "sent") {
+  if (
+    stage === "drafting" ||
+    stage === "draft_ready" ||
+    stage === "needs_review" ||
+    stage === "approved" ||
+    stage === "sent" ||
+    stage === "replied" ||
+    stage === "converted" ||
+    stage === "archived"
+  ) {
     summary.has_agent1_output = true;
   }
-  if (stage === "agent2" || stage === "agent3" || stage === "ready" || stage === "hold" || stage === "sent") {
+  if (
+    stage === "draft_ready" ||
+    stage === "needs_review" ||
+    stage === "approved" ||
+    stage === "sent" ||
+    stage === "replied" ||
+    stage === "converted" ||
+    stage === "archived"
+  ) {
     summary.has_draft = true;
   }
-  if (stage === "agent3" || stage === "ready" || stage === "hold" || stage === "sent") {
+  if (
+    stage === "needs_review" ||
+    stage === "approved" ||
+    stage === "sent" ||
+    stage === "replied" ||
+    stage === "converted" ||
+    stage === "archived"
+  ) {
     summary.has_agent3_verdict = true;
   }
-  if (stage === "ready") {
+  if (stage === "approved") {
     summary.final_decision = "send";
-  } else if (stage === "hold") {
+  } else if (stage === "needs_review") {
     summary.final_decision = "hold";
   }
 
@@ -74,26 +126,41 @@ export function resolveLeadPipeline(lead: Lead): LeadPipelineSummary {
 }
 
 export function stageLabel(stage: LeadStage): string {
-  if (stage === "agent1") {
-    return "Agent1";
+  if (stage === "discovered") {
+    return "Discovered";
   }
-  if (stage === "agent2") {
-    return "Drafted";
+  if (stage === "imported") {
+    return "Imported";
   }
-  if (stage === "agent3") {
-    return "Verified";
+  if (stage === "researching") {
+    return "Researching";
   }
-  if (stage === "ingested") {
-    return "Ingested";
+  if (stage === "researched") {
+    return "Researched";
   }
-  if (stage === "ready") {
-    return "Ready";
+  if (stage === "drafting") {
+    return "Drafting";
   }
-  if (stage === "hold") {
-    return "Hold";
+  if (stage === "draft_ready") {
+    return "Draft Ready";
+  }
+  if (stage === "needs_review") {
+    return "Needs Review";
+  }
+  if (stage === "approved") {
+    return "Approved";
   }
   if (stage === "sent") {
     return "Sent";
   }
-  return "New";
+  if (stage === "replied") {
+    return "Replied";
+  }
+  if (stage === "converted") {
+    return "Converted";
+  }
+  if (stage === "archived") {
+    return "Archived";
+  }
+  return "Imported";
 }

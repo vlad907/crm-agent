@@ -15,6 +15,24 @@ from app.api.deps.scoping import require_scoped_lead
 from app.db.session import get_db
 from app.models.email_draft import EmailDraft
 from app.models.lead import Lead
+from app.models.lead_status import (
+    DEFAULT_LEAD_STATUS,
+    LEAD_STATUS_APPROVED,
+    LEAD_STATUS_ARCHIVED,
+    LEAD_STATUS_CONVERTED,
+    LEAD_STATUS_DISCOVERED,
+    LEAD_STATUS_DRAFT_READY,
+    LEAD_STATUS_DRAFTING,
+    LEAD_STATUS_IMPORTED,
+    LEAD_STATUS_NEEDS_REVIEW,
+    LEAD_STATUS_REPLIED,
+    LEAD_STATUS_RESEARCHED,
+    LEAD_STATUS_RESEARCHING,
+    LEAD_STATUS_SENT,
+    LEAD_STATUS_SET,
+    normalize_lead_status,
+)
+from app.models.workspace_ai_strategy import WorkspaceAIStrategy
 from app.models.website_page import WebsitePage
 from app.models.website_snapshot import WebsiteSnapshot
 from app.schemas.agent1 import Agent1RunResponse, LatestContextResponse, LatestContextSnapshot
@@ -44,6 +62,7 @@ from app.services.openai_client import (
 from app.services.scrape import WebsiteFetchError
 from app.services.website_ingestion import ingest_website_pages
 from app.services.workspace_credentials import resolve_openai_api_key
+from app.services.workspace_ai_strategy import build_strategy_context
 
 router = APIRouter(prefix="/leads", tags=["Leads"])
 logger = logging.getLogger(__name__)
@@ -61,22 +80,20 @@ def _compute_stage(
     has_agent3_verdict: bool,
     final_decision: str | None,
 ) -> str:
-    status_norm = (lead_status or "").strip().lower()
-    if status_norm == "sent":
-        return "sent"
-    if final_decision == "send" or status_norm in {"send", "ready_to_send", "ready"}:
-        return "ready"
-    if final_decision == "hold" or status_norm == "hold":
-        return "hold"
+    status_norm = normalize_lead_status(lead_status, fallback=DEFAULT_LEAD_STATUS)
+    if status_norm in {LEAD_STATUS_ARCHIVED, LEAD_STATUS_CONVERTED, LEAD_STATUS_REPLIED, LEAD_STATUS_SENT}:
+        return status_norm
+    if final_decision == "send":
+        return LEAD_STATUS_APPROVED
+    if final_decision == "hold":
+        return LEAD_STATUS_NEEDS_REVIEW
     if has_agent3_verdict:
-        return "agent3"
+        return status_norm if status_norm in {LEAD_STATUS_APPROVED, LEAD_STATUS_NEEDS_REVIEW} else LEAD_STATUS_DRAFT_READY
     if has_draft:
-        return "agent2"
-    if has_agent1_output:
-        return "agent1"
-    if has_snapshot or status_norm == "ingested":
-        return "ingested"
-    return "new"
+        return status_norm if status_norm == LEAD_STATUS_DRAFTING else LEAD_STATUS_DRAFT_READY
+    if has_agent1_output or has_snapshot:
+        return status_norm if status_norm == LEAD_STATUS_RESEARCHING else LEAD_STATUS_RESEARCHED
+    return status_norm if status_norm in {LEAD_STATUS_IMPORTED, LEAD_STATUS_DISCOVERED} else DEFAULT_LEAD_STATUS
 
 
 def _is_non_agent1_placeholder_draft(draft: EmailDraft) -> bool:
@@ -140,8 +157,10 @@ def _build_pipeline_summary_map(db: Session, workspace_id: UUID, leads: list[Lea
 
         if final_decision is None:
             status_norm = (lead.status or "").strip().lower()
-            if status_norm in {"send", "hold"}:
-                final_decision = status_norm
+            if status_norm in {"send", LEAD_STATUS_APPROVED}:
+                final_decision = "send"
+            elif status_norm in {"hold", LEAD_STATUS_NEEDS_REVIEW}:
+                final_decision = "hold"
 
         pipeline_map[lead.id] = LeadPipelineSummary(
             has_snapshot=has_snapshot,
@@ -173,7 +192,9 @@ def create_lead(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_request_context),
 ) -> LeadRead:
-    lead = Lead(workspace_id=ctx.workspace_id, **payload.model_dump())
+    lead_data = payload.model_dump()
+    lead_data["status"] = DEFAULT_LEAD_STATUS
+    lead = Lead(workspace_id=ctx.workspace_id, **lead_data)
     db.add(lead)
     db.commit()
     db.refresh(lead)
@@ -254,7 +275,13 @@ def list_leads(
     filters = [Lead.workspace_id == ctx.workspace_id]
 
     if status_filter:
-        filters.append(Lead.status == status_filter)
+        normalized_status = normalize_lead_status(status_filter, fallback=None)
+        if normalized_status is None or normalized_status not in LEAD_STATUS_SET:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status filter '{status_filter}'.",
+            )
+        filters.append(Lead.status == normalized_status)
     if query:
         filters.append(Lead.company.ilike(f"%{query}%"))
 
@@ -374,6 +401,7 @@ def ingest_website(
         raw_text=raw_text,
         fetched_at=datetime.now(timezone.utc),
     )
+    lead.status = LEAD_STATUS_RESEARCHING
     db.add(snapshot)
     db.commit()
     db.refresh(snapshot)
@@ -444,6 +472,7 @@ def run_agent1_for_lead(
         agent1_output=agent1_output,
         decision="draft",
     )
+    lead.status = LEAD_STATUS_RESEARCHED
     db.add(draft)
     db.commit()
 
@@ -514,6 +543,10 @@ def run_agent2_for_lead(
     )
 
     logger.info("Agent2 run start lead_id=%s snapshot_id=%s", lead_id, latest_snapshot.id)
+    lead.status = LEAD_STATUS_DRAFTING
+    db.commit()
+    db.refresh(lead)
+    strategy_context = build_strategy_context(db.get(WorkspaceAIStrategy, ctx.workspace_id))
     try:
         agent2_output = run_agent2(
             lead_name=lead.name,
@@ -521,6 +554,7 @@ def run_agent2_for_lead(
             website_url=lead.website_url,
             snapshot_text=latest_snapshot.raw_text,
             agent1_output=latest_agent1_draft.agent1_output,
+            strategy_context=strategy_context,
             api_key=openai_api_key,
         )
     except OpenAIConfigurationError as exc:
@@ -543,6 +577,7 @@ def run_agent2_for_lead(
         agent3_verdict={"used_signal": agent2_output["used_signal"], "source": "agent2"},
         decision="draft",
     )
+    lead.status = LEAD_STATUS_DRAFT_READY
     db.add(draft)
     db.commit()
     db.refresh(draft)

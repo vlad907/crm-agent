@@ -243,6 +243,7 @@ def run_agent2(
     website_url: str | None,
     snapshot_text: str,
     agent1_output: dict[str, Any],
+    strategy_context: dict[str, Any] | None = None,
     api_key: str | None = None,
 ) -> dict[str, Any]:
     resolved_api_key = (api_key or "").strip() or (settings.openai_api_key or "").strip()
@@ -260,6 +261,7 @@ def run_agent2(
         website_url=website_url,
         snapshot_text=snapshot_text,
         agent1_output=agent1_output,
+        strategy_context=strategy_context,
     )
     retries = max(0, settings.openai_rate_limit_retries)
     base_backoff = max(0.1, settings.openai_rate_limit_backoff_seconds)
@@ -337,13 +339,22 @@ def _build_agent2_payload(
     website_url: str | None,
     snapshot_text: str,
     agent1_output: dict[str, Any],
+    strategy_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     context = {
         "lead_name": lead_name,
         "company": company,
         "website_url": website_url,
         "agent1_output": agent1_output,
+        "strategy_context": strategy_context or {},
     }
+    strategy_instructions = (
+        "Strategy rules:\n"
+        "- If selected_service_angle_details or selected_priority_pain_point_details are provided, anchor the draft to them only.\n"
+        "- Do not introduce pain points or service angles outside selected strategy items.\n"
+        "- If no selected strategy items exist, use a safer, simple outreach pattern with one modest CTA and no strong claims.\n"
+        "- used_signal should cite either a selected pain/angle key or a clear factual signal from agent1_output.\n"
+    )
     return {
         "model": settings.openai_model,
         "input": [
@@ -358,6 +369,7 @@ def _build_agent2_payload(
                             f"{json.dumps(context, ensure_ascii=True)}\n\n"
                             "Website snapshot text:\n"
                             f"{snapshot_text}\n\n"
+                            f"{strategy_instructions}\n"
                             "Return subject, email_body, and used_signal."
                         ),
                     }

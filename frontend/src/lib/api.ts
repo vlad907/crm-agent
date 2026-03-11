@@ -7,6 +7,13 @@ import {
   DevLoginPayload,
   DevLoginResult,
   Draft,
+  DraftReviewQueueItem,
+  DraftReviewQueueSummary,
+  DraftReviewUpdateResponse,
+  GmailConnectUrlResponse,
+  GmailDraftActionResponse,
+  GmailSendResponse,
+  GmailStatusResponse,
   Lead,
   LeadImportPayload,
   LeadImportResponse,
@@ -20,6 +27,10 @@ import {
   WorkspaceSettings,
   WorkspaceProfile,
   WorkspaceProfileUpdate,
+  WorkspaceAiStrategy,
+  WorkspaceAiStrategyUpdate,
+  WorkspaceAutomationSettings,
+  WorkspaceAutomationSettingsUpdate,
   WorkspaceSettingsUpdate,
   WebsitePage,
   WebsiteIngestResult
@@ -186,12 +197,48 @@ export function patchWorkspaceSettings(payload: WorkspaceSettingsUpdate): Promis
   });
 }
 
+export function getAutomationSettings(): Promise<WorkspaceAutomationSettings> {
+  return apiFetch<WorkspaceAutomationSettings>("/api/v1/automation-settings");
+}
+
+export function patchAutomationSettings(payload: WorkspaceAutomationSettingsUpdate): Promise<WorkspaceAutomationSettings> {
+  return apiFetch<WorkspaceAutomationSettings>("/api/v1/automation-settings", {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function getGmailConnectUrl(): Promise<GmailConnectUrlResponse> {
+  return apiFetch<GmailConnectUrlResponse>("/api/v1/integrations/gmail/connect-url");
+}
+
+export function getGmailStatus(): Promise<GmailStatusResponse> {
+  return apiFetch<GmailStatusResponse>("/api/v1/integrations/gmail/status");
+}
+
 export function getWorkspaceProfile(): Promise<WorkspaceProfile> {
   return apiFetch<WorkspaceProfile>("/api/v1/workspace-profile");
 }
 
 export function patchWorkspaceProfile(payload: WorkspaceProfileUpdate): Promise<WorkspaceProfile> {
   return apiFetch<WorkspaceProfile>("/api/v1/workspace-profile", {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function getWorkspaceAiStrategy(): Promise<WorkspaceAiStrategy> {
+  return apiFetch<WorkspaceAiStrategy>("/api/v1/workspace-ai-strategy");
+}
+
+export function generateWorkspaceAiStrategy(): Promise<WorkspaceAiStrategy> {
+  return apiFetch<WorkspaceAiStrategy>("/api/v1/workspace-ai-strategy/generate", {
+    method: "POST"
+  });
+}
+
+export function patchWorkspaceAiStrategy(payload: WorkspaceAiStrategyUpdate): Promise<WorkspaceAiStrategy> {
+  return apiFetch<WorkspaceAiStrategy>("/api/v1/workspace-ai-strategy", {
     method: "PATCH",
     body: JSON.stringify(payload)
   });
@@ -235,6 +282,40 @@ export function getLeadDrafts(id: string, limit = 20, offset = 0): Promise<Draft
 
 export function getLeadWebsitePages(id: string, limit = 50, offset = 0): Promise<WebsitePage[]> {
   return apiFetch<WebsitePage[]>(`/api/v1/leads/${id}/website-pages?limit=${limit}&offset=${offset}`);
+}
+
+export function getDraftReviewQueue(limit = 25, offset = 0, includeApproved = false): Promise<DraftReviewQueueItem[]> {
+  return apiFetch<DraftReviewQueueItem[]>(
+    `/api/v1/drafts/review-queue?limit=${limit}&offset=${offset}&include_approved=${includeApproved ? "true" : "false"}`
+  );
+}
+
+export function getDraftReviewQueueSummary(): Promise<DraftReviewQueueSummary> {
+  return apiFetch<DraftReviewQueueSummary>("/api/v1/drafts/review-queue-summary");
+}
+
+export function approveDraft(draftId: string): Promise<DraftReviewUpdateResponse> {
+  return apiFetch<DraftReviewUpdateResponse>(`/api/v1/drafts/${draftId}/approve`, {
+    method: "POST"
+  });
+}
+
+export function rejectDraft(draftId: string): Promise<DraftReviewUpdateResponse> {
+  return apiFetch<DraftReviewUpdateResponse>(`/api/v1/drafts/${draftId}/reject`, {
+    method: "POST"
+  });
+}
+
+export function createGmailDraft(draftId: string): Promise<GmailDraftActionResponse> {
+  return apiFetch<GmailDraftActionResponse>(`/api/v1/drafts/${draftId}/create-gmail-draft`, {
+    method: "POST"
+  });
+}
+
+export function sendDraft(draftId: string): Promise<GmailSendResponse> {
+  return apiFetch<GmailSendResponse>(`/api/v1/drafts/${draftId}/send`, {
+    method: "POST"
+  });
 }
 
 export function devLogin(payload: DevLoginPayload): Promise<DevLoginResult> {

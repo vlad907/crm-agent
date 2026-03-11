@@ -22,7 +22,7 @@ import { Lead, LeadListResponse } from "@/src/lib/types";
 
 const PAGE_SIZE = 20;
 
-type QuickFilter = "all" | "needs_ingestion" | "needs_agent1" | "needs_agent2" | "needs_agent3" | "ready" | "hold";
+type QuickFilter = "all" | "needs_ingestion" | "needs_agent1" | "needs_agent2" | "needs_agent3" | "approved" | "needs_review";
 type LeadAction = "ingest" | "agent1" | "agent2" | "agent3" | "refresh";
 
 function getErrorMessage(error: unknown): string {
@@ -52,11 +52,11 @@ function matchesQuickFilter(lead: Lead, quickFilter: QuickFilter): boolean {
   if (quickFilter === "needs_agent3") {
     return summary.has_draft && !summary.has_agent3_verdict;
   }
-  if (quickFilter === "ready") {
-    return summary.computed_stage === "ready";
+  if (quickFilter === "approved") {
+    return summary.computed_stage === "approved";
   }
-  if (quickFilter === "hold") {
-    return summary.computed_stage === "hold";
+  if (quickFilter === "needs_review") {
+    return summary.computed_stage === "needs_review";
   }
   return true;
 }
@@ -83,20 +83,20 @@ function actionLabel(action: LeadAction): string {
     return "Bulk Ingest Website";
   }
   if (action === "agent1") {
-    return "Bulk Run Agent 1";
+    return "Run Research";
   }
   if (action === "agent2") {
-    return "Bulk Run Agent 2";
+    return "Generate Drafts";
   }
   if (action === "agent3") {
-    return "Bulk Run Agent 3";
+    return "Verify Drafts";
   }
   return "Bulk Refresh";
 }
 
 function isReadyOrDone(lead: Lead): boolean {
   const stage = resolveLeadPipeline(lead).computed_stage;
-  return stage === "ready" || stage === "hold" || stage === "sent";
+  return ["approved", "needs_review", "sent", "replied", "converted", "archived"].includes(stage);
 }
 
 export default function LeadsPage() {
@@ -162,42 +162,48 @@ export default function LeadsPage() {
   const stageCounts = useMemo(() => {
     const counts = {
       total: leads.length,
-      new: 0,
-      ingested: 0,
-      drafted: 0,
-      verified: 0,
-      ready: 0,
-      hold: 0,
-      sent: 0
+      discovered: 0,
+      imported: 0,
+      researching: 0,
+      researched: 0,
+      drafting: 0,
+      draft_ready: 0,
+      needs_review: 0,
+      approved: 0,
+      sent: 0,
+      replied: 0,
+      converted: 0,
+      archived: 0
     };
 
     leads.forEach((lead) => {
       const summary = resolveLeadPipeline(lead);
-      if (summary.computed_stage === "sent") {
+      const stage = summary.computed_stage;
+      if (stage === "sent") {
         counts.sent += 1;
-        return;
+      } else if (stage === "replied") {
+        counts.replied += 1;
+      } else if (stage === "converted") {
+        counts.converted += 1;
+      } else if (stage === "archived") {
+        counts.archived += 1;
+      } else if (stage === "approved") {
+        counts.approved += 1;
+      } else if (stage === "needs_review") {
+        counts.needs_review += 1;
+      } else if (stage === "draft_ready") {
+        counts.draft_ready += 1;
+      } else if (stage === "drafting") {
+        counts.drafting += 1;
+      } else if (stage === "researched") {
+        counts.researched += 1;
+      } else if (stage === "researching") {
+        counts.researching += 1;
+      } else if (stage === "discovered") {
+        counts.discovered += 1;
+      } else {
+        counts.imported += 1;
       }
-      if (summary.computed_stage === "hold") {
-        counts.hold += 1;
-        return;
-      }
-      if (summary.computed_stage === "ready") {
-        counts.ready += 1;
-        return;
-      }
-      if (summary.has_agent3_verdict) {
-        counts.verified += 1;
-        return;
-      }
-      if (summary.has_draft) {
-        counts.drafted += 1;
-        return;
-      }
-      if (summary.has_snapshot) {
-        counts.ingested += 1;
-        return;
-      }
-      counts.new += 1;
     });
 
     return counts;
@@ -359,39 +365,59 @@ export default function LeadsPage() {
 
       <section className="card surface-metrics stack">
         <h2>Pipeline Overview</h2>
-        <div className="muted">NEW -&gt; INGESTED -&gt; DRAFTED -&gt; VERIFIED -&gt; READY/HOLD -&gt; SENT</div>
+        <div className="muted">DISCOVERED -&gt; IMPORTED -&gt; RESEARCHING -&gt; RESEARCHED -&gt; DRAFTING -&gt; DRAFT READY -&gt; APPROVED/NEEDS REVIEW -&gt; SENT</div>
         <div className="pipeline-lane pipeline-lane-wide">
           <div className="pipeline-stage">
             <div className="metric-label">Total</div>
             <div className="metric-value">{stageCounts.total}</div>
           </div>
           <div className="pipeline-stage">
-            <div className="metric-label">New</div>
-            <div className="metric-value">{stageCounts.new}</div>
+            <div className="metric-label">Discovered</div>
+            <div className="metric-value">{stageCounts.discovered}</div>
           </div>
           <div className="pipeline-stage">
-            <div className="metric-label">Ingested</div>
-            <div className="metric-value">{stageCounts.ingested}</div>
+            <div className="metric-label">Imported</div>
+            <div className="metric-value">{stageCounts.imported}</div>
           </div>
           <div className="pipeline-stage">
-            <div className="metric-label">Drafted</div>
-            <div className="metric-value">{stageCounts.drafted}</div>
+            <div className="metric-label">Researching</div>
+            <div className="metric-value">{stageCounts.researching}</div>
           </div>
           <div className="pipeline-stage">
-            <div className="metric-label">Verified</div>
-            <div className="metric-value">{stageCounts.verified}</div>
+            <div className="metric-label">Researched</div>
+            <div className="metric-value">{stageCounts.researched}</div>
           </div>
           <div className="pipeline-stage">
-            <div className="metric-label">Ready</div>
-            <div className="metric-value">{stageCounts.ready}</div>
+            <div className="metric-label">Drafting</div>
+            <div className="metric-value">{stageCounts.drafting}</div>
           </div>
           <div className="pipeline-stage">
-            <div className="metric-label">Hold</div>
-            <div className="metric-value">{stageCounts.hold}</div>
+            <div className="metric-label">Draft Ready</div>
+            <div className="metric-value">{stageCounts.draft_ready}</div>
+          </div>
+          <div className="pipeline-stage">
+            <div className="metric-label">Needs Review</div>
+            <div className="metric-value">{stageCounts.needs_review}</div>
+          </div>
+          <div className="pipeline-stage">
+            <div className="metric-label">Approved</div>
+            <div className="metric-value">{stageCounts.approved}</div>
           </div>
           <div className="pipeline-stage">
             <div className="metric-label">Sent</div>
             <div className="metric-value">{stageCounts.sent}</div>
+          </div>
+          <div className="pipeline-stage">
+            <div className="metric-label">Replied</div>
+            <div className="metric-value">{stageCounts.replied}</div>
+          </div>
+          <div className="pipeline-stage">
+            <div className="metric-label">Converted</div>
+            <div className="metric-value">{stageCounts.converted}</div>
+          </div>
+          <div className="pipeline-stage">
+            <div className="metric-label">Archived</div>
+            <div className="metric-value">{stageCounts.archived}</div>
           </div>
         </div>
       </section>
@@ -429,16 +455,13 @@ export default function LeadsPage() {
                 Bulk Ingest Website
               </button>
               <button type="button" className="btn-secondary" disabled={isBulkRunning} onClick={() => void runBulk("agent1")}>
-                Bulk Run Agent 1
+                Run Research
               </button>
               <button type="button" className="btn-secondary" disabled={isBulkRunning} onClick={() => void runBulk("agent2")}>
-                Bulk Run Agent 2
+                Generate Drafts
               </button>
               <button type="button" className="btn-secondary" disabled={isBulkRunning} onClick={() => void runBulk("agent3")}>
-                Bulk Run Agent 3
-              </button>
-              <button type="button" className="btn-secondary" disabled={isBulkRunning} onClick={() => void runBulk("refresh")}>
-                Bulk Refresh
+                Verify Drafts
               </button>
               <button type="button" className="btn-secondary" disabled={isBulkRunning} onClick={() => setSelectedLeadIds([])}>
                 Clear Selection

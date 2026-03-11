@@ -13,7 +13,12 @@ from app.models.email_draft import EmailDraft  # noqa: F401
 from app.models.integration_account import IntegrationAccount  # noqa: F401
 from app.models.lead import Lead  # noqa: F401
 from app.models.oauth_token import OAuthToken  # noqa: F401
+from app.models.workspace_ai_strategy import WorkspaceAIStrategy  # noqa: F401
+from app.models.workspace_automation_setting import WorkspaceAutomationSetting  # noqa: F401
+from app.models.workspace_profile import WorkspaceProfile  # noqa: F401
+from app.models.workspace_setting import WorkspaceSetting  # noqa: F401
 from app.models.user import User
+from app.models.website_page import WebsitePage  # noqa: F401
 from app.models.website_snapshot import WebsiteSnapshot  # noqa: F401
 from app.models.workspace import Workspace
 

@@ -16,9 +16,11 @@ if TYPE_CHECKING:
     from app.models.lead import Lead
     from app.models.prospect import Prospect
     from app.models.user import User
+    from app.models.workspace_ai_strategy import WorkspaceAIStrategy
     from app.models.website_page import WebsitePage
     from app.models.website_snapshot import WebsiteSnapshot
     from app.models.workspace_profile import WorkspaceProfile
+    from app.models.workspace_automation_setting import WorkspaceAutomationSetting
     from app.models.workspace_setting import WorkspaceSetting
 
 
@@ -52,7 +54,19 @@ class Workspace(TimestampMixin, Base):
         passive_deletes=True,
         uselist=False,
     )
+    automation_settings: Mapped["WorkspaceAutomationSetting | None"] = relationship(
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
     profile: Mapped["WorkspaceProfile | None"] = relationship(
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
+    ai_strategy: Mapped["WorkspaceAIStrategy | None"] = relationship(
         back_populates="workspace",
         cascade="all, delete-orphan",
         passive_deletes=True,

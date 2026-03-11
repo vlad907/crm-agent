@@ -3,11 +3,12 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import Enum, ForeignKey, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.models.lead_status import DEFAULT_LEAD_STATUS, LEAD_STATUS_VALUES
 from app.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
@@ -36,7 +37,13 @@ class Lead(TimestampMixin, Base):
     website_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(String(100), nullable=False)
-    status: Mapped[str] = mapped_column(String(50), nullable=False, default="new", index=True)
+    status: Mapped[str] = mapped_column(
+        Enum(*LEAD_STATUS_VALUES, name="lead_status"),
+        nullable=False,
+        default=DEFAULT_LEAD_STATUS,
+        server_default=text(f"'{DEFAULT_LEAD_STATUS}'"),
+        index=True,
+    )
 
     workspace: Mapped["Workspace"] = relationship(back_populates="leads")
     snapshots: Mapped[list["WebsiteSnapshot"]] = relationship(

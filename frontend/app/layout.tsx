@@ -34,6 +34,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Link href="/settings" className="nav-link">
                   Settings
                 </Link>
+                <Link href="/automation" className="nav-link">
+                  Automation
+                </Link>
                 <Link href="/login" className="nav-link">
                   Login
                 </Link>

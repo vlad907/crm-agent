@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.lead import Lead
+from app.models.lead_status import DEFAULT_LEAD_STATUS
 from app.models.prospect import Prospect
 from app.services.lead_import import normalize_website_url
 
@@ -441,7 +442,7 @@ def convert_prospects_to_leads(
             phone=_clean_text(prospect.phone),
             website_url=website_url,
             source=prospect.source,
-            status="new",
+            status=DEFAULT_LEAD_STATUS,
         )
         converted_leads.append(lead)
         prospect.import_status = "imported"

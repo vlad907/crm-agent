@@ -1,19 +1,33 @@
 export type JsonObject = Record<string, unknown>;
 
+export type LeadStatus =
+  | "discovered"
+  | "imported"
+  | "researching"
+  | "researched"
+  | "drafting"
+  | "draft_ready"
+  | "needs_review"
+  | "approved"
+  | "sent"
+  | "replied"
+  | "converted"
+  | "archived";
+
 export interface LeadPipelineSummary {
   has_snapshot: boolean;
   has_agent1_output: boolean;
   has_draft: boolean;
   has_agent3_verdict: boolean;
   final_decision?: string | null;
-  computed_stage: string;
+  computed_stage: LeadStatus | string;
 }
 
 export interface Lead {
   id: string;
   name: string;
   company: string;
-  status: string;
+  status: LeadStatus | string;
   source: string;
   phone?: string | null;
   website_url?: string | null;
@@ -49,6 +63,14 @@ export interface Draft {
   subject: string;
   body: string;
   decision: string;
+  review_status?: string;
+  review_notes?: string | null;
+  approved_at?: string | null;
+  rejected_at?: string | null;
+  gmail_draft_id?: string | null;
+  gmail_message_id?: string | null;
+  gmail_thread_id?: string | null;
+  sent_at?: string | null;
   agent1_output?: JsonObject | null;
   agent3_verdict?: JsonObject | null;
   created_at?: string;
@@ -129,7 +151,7 @@ export interface CreateLeadPayload {
   name: string;
   company: string;
   source: string;
-  status: string;
+  status: LeadStatus;
   phone?: string | null;
   website_url?: string | null;
   email?: string | null;
@@ -148,7 +170,7 @@ export interface LeadImportItem {
   website_url?: string | null;
   email?: string | null;
   source?: string | null;
-  status?: string | null;
+  status?: LeadStatus | null;
 }
 
 export interface LeadImportPayload {
@@ -296,6 +318,95 @@ export interface WorkspaceSettingsUpdate {
   gmail_connected?: boolean | null;
 }
 
+export type AutomationMode = "manual" | "semi_auto" | "auto_draft" | "auto_send";
+
+export interface WorkspaceAutomationSettings {
+  workspace_id: string;
+  automation_mode: AutomationMode;
+  require_manual_review_before_send: boolean;
+  auto_create_gmail_draft: boolean;
+  auto_send_approved_emails: boolean;
+  pause_pipeline: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface WorkspaceAutomationSettingsUpdate {
+  automation_mode?: AutomationMode;
+  require_manual_review_before_send?: boolean;
+  auto_create_gmail_draft?: boolean;
+  auto_send_approved_emails?: boolean;
+  pause_pipeline?: boolean;
+}
+
+export interface GmailConnectUrlResponse {
+  connect_url: string;
+}
+
+export interface GmailStatusResponse {
+  provider: "gmail" | string;
+  workspace_id: string;
+  connected: boolean;
+  connected_email?: string | null;
+  integration_status: string;
+  last_error?: string | null;
+}
+
+export interface DraftReviewQueueItem {
+  draft_id: string;
+  lead_id: string;
+  lead_company: string;
+  lead_email?: string | null;
+  lead_status: string;
+  subject: string;
+  body: string;
+  decision: string;
+  review_status: string;
+  issues: string[];
+  final_email?: {
+    subject?: string;
+    email_body?: string;
+    [key: string]: unknown;
+  } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DraftReviewQueueSummary {
+  needs_review: number;
+  approved: number;
+  queued_to_send: number;
+  sent: number;
+}
+
+export interface DraftReviewUpdateResponse {
+  draft_id: string;
+  lead_id: string;
+  review_status: string;
+  decision: string;
+  lead_status: string;
+}
+
+export interface GmailDraftActionResponse {
+  draft_id: string;
+  lead_id: string;
+  gmail_draft_id: string;
+  gmail_message_id?: string | null;
+  gmail_thread_id?: string | null;
+  review_status: string;
+  lead_status: string;
+}
+
+export interface GmailSendResponse {
+  draft_id: string;
+  lead_id: string;
+  gmail_message_id?: string | null;
+  gmail_thread_id?: string | null;
+  sent_at: string;
+  review_status: string;
+  lead_status: string;
+}
+
 export interface WorkspaceProfile {
   workspace_id: string;
   business_name?: string | null;
@@ -321,4 +432,65 @@ export interface WorkspaceProfileUpdate {
   outreach_style?: string | null;
   preferred_cta?: string | null;
   do_not_mention?: string[] | null;
+}
+
+export interface StrategyIdealCustomer {
+  category: string;
+  display_name: string;
+  why_fit: string;
+  priority: number;
+}
+
+export interface StrategyPainPoint {
+  key: string;
+  label: string;
+  why_relevant: string;
+}
+
+export interface StrategyServiceAngle {
+  key: string;
+  label: string;
+  best_for_categories: string[];
+  why_relevant?: string;
+}
+
+export interface StrategyCtaRecommendation {
+  key: string;
+  label: string;
+}
+
+export interface StrategyGuardrails {
+  avoid_claims: string[];
+  avoid_tone: string[];
+  notes: string[];
+}
+
+export interface WorkspaceGeneratedStrategy {
+  business_model_classification?: string[];
+  core_positioning: string;
+  ideal_customers: StrategyIdealCustomer[];
+  priority_pain_points: StrategyPainPoint[];
+  service_angles: StrategyServiceAngle[];
+  cta_recommendations: StrategyCtaRecommendation[];
+  guardrails: StrategyGuardrails;
+}
+
+export interface WorkspaceAiStrategy {
+  workspace_id: string;
+  generated_strategy?: WorkspaceGeneratedStrategy | null;
+  selected_target_categories: string[];
+  selected_priority_pain_points: string[];
+  selected_service_angles: string[];
+  selected_cta_style?: string | null;
+  version: number;
+  last_generated_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface WorkspaceAiStrategyUpdate {
+  selected_target_categories?: string[] | null;
+  selected_priority_pain_points?: string[] | null;
+  selected_service_angles?: string[] | null;
+  selected_cta_style?: string | null;
 }

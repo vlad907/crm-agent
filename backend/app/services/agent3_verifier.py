@@ -44,6 +44,7 @@ AGENT3_SYSTEM_PROMPT = """You are Agent 3, an outbound email verifier.
 Return JSON only. No markdown. No backticks.
 Rules:
 - Do not introduce facts not supported by website text or agent1 evidence.
+- If strategy context includes selected items, ensure the draft aligns with those selected pain points/angles.
 - Keep tone professional, human, and non-spammy.
 - Exactly one clear CTA.
 - No aggressive language and no guarantees.
@@ -72,6 +73,7 @@ def verify_email_with_agent3(
     agent1_output: dict[str, Any],
     draft_subject: str,
     draft_body: str,
+    strategy_context: dict[str, Any] | None = None,
     api_key: str | None = None,
 ) -> dict[str, Any]:
     resolved_api_key = (api_key or "").strip() or (settings.openai_api_key or "").strip()
@@ -90,6 +92,7 @@ def verify_email_with_agent3(
         agent1_output=agent1_output,
         draft_subject=draft_subject,
         draft_body=draft_body,
+        strategy_context=strategy_context,
     )
     retries = max(0, settings.openai_rate_limit_retries)
     base_backoff = max(0.1, settings.openai_rate_limit_backoff_seconds)
@@ -147,12 +150,14 @@ def _build_payload(
     agent1_output: dict[str, Any],
     draft_subject: str,
     draft_body: str,
+    strategy_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     context = {
         "lead_name": lead_name,
         "company": company,
         "website_url": website_url,
         "agent1_output": agent1_output,
+        "strategy_context": strategy_context or {},
         "draft_email": {
             "subject": draft_subject,
             "email_body": draft_body,

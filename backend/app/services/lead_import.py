@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.lead import Lead
+from app.models.lead_status import DEFAULT_LEAD_STATUS, normalize_lead_status
 
 email_adapter = TypeAdapter(EmailStr)
 
@@ -246,7 +247,7 @@ def import_leads_for_workspace(
             website_url=website_url,
             email=email,
             source=_clean_text(candidate.source) or default_source,
-            status=_clean_text(candidate.status) or "new",
+            status=normalize_lead_status(candidate.status, fallback=DEFAULT_LEAD_STATUS),
         )
         imported.append(lead)
         if dedupe_by_website and website_url:

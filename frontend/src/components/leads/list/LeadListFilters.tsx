@@ -60,17 +60,17 @@ export function LeadListFilters({
         </button>
         <button
           type="button"
-          className={`quick-filter-btn ${activeQuickFilter === "ready" ? "active" : ""}`}
-          onClick={() => onQuickFilterChange("ready")}
+          className={`quick-filter-btn ${activeQuickFilter === "approved" ? "active" : ""}`}
+          onClick={() => onQuickFilterChange("approved")}
         >
-          Ready
+          Approved
         </button>
         <button
           type="button"
-          className={`quick-filter-btn ${activeQuickFilter === "hold" ? "active" : ""}`}
-          onClick={() => onQuickFilterChange("hold")}
+          className={`quick-filter-btn ${activeQuickFilter === "needs_review" ? "active" : ""}`}
+          onClick={() => onQuickFilterChange("needs_review")}
         >
-          Hold
+          Needs Review
         </button>
       </div>
 
@@ -80,10 +80,18 @@ export function LeadListFilters({
           <label htmlFor="status">Status</label>
           <select id="status" value={statusInput} onChange={(event) => onStatusChange(event.target.value)}>
             <option value="">All statuses</option>
-            <option value="new">new</option>
-            <option value="draft">draft</option>
-            <option value="send">send</option>
-            <option value="hold">hold</option>
+            <option value="discovered">discovered</option>
+            <option value="imported">imported</option>
+            <option value="researching">researching</option>
+            <option value="researched">researched</option>
+            <option value="drafting">drafting</option>
+            <option value="draft_ready">draft_ready</option>
+            <option value="needs_review">needs_review</option>
+            <option value="approved">approved</option>
+            <option value="sent">sent</option>
+            <option value="replied">replied</option>
+            <option value="converted">converted</option>
+            <option value="archived">archived</option>
           </select>
         </div>
         <div className="field" style={{ minWidth: 270 }}>

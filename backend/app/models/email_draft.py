@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -36,6 +37,14 @@ class EmailDraft(TimestampMixin, Base):
     agent1_output: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     agent3_verdict: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     decision: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
+    review_status: Mapped[str] = mapped_column(String(30), nullable=False, default="draft", index=True)
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    gmail_draft_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    gmail_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    gmail_thread_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="drafts")
     lead: Mapped["Lead"] = relationship(back_populates="drafts")

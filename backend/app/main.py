@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from app.api.v1.api import api_router
 from app.core.config import settings
 from app.services.dev_identity import DevIdentityError, initialize_default_identity_for_dev, resolve_request_identity
+from app.services.pipeline_worker import pipeline_worker
 
 app = FastAPI(title=settings.app_name)
 
@@ -19,7 +20,11 @@ app.add_middleware(
 
 @app.middleware("http")
 async def attach_request_identity(request: Request, call_next):
-    if request.url.path == "/health":
+    bypass_paths = {
+        "/health",
+        f"{settings.api_prefix}/integrations/gmail/callback",
+    }
+    if request.url.path in bypass_paths:
         return await call_next(request)
 
     try:
@@ -38,6 +43,16 @@ async def attach_request_identity(request: Request, call_next):
 @app.on_event("startup")
 def bootstrap_dev_identity_defaults() -> None:
     initialize_default_identity_for_dev()
+
+
+@app.on_event("startup")
+async def start_pipeline_worker() -> None:
+    pipeline_worker.start()
+
+
+@app.on_event("shutdown")
+async def stop_pipeline_worker() -> None:
+    await pipeline_worker.stop()
 
 
 @app.get("/health")

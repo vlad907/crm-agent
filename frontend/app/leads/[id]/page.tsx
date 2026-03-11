@@ -18,6 +18,7 @@ import {
   runAgent2,
   runAgent3
 } from "@/src/lib/api";
+import { resolveLeadPipeline } from "@/src/lib/leadPipeline";
 import { Draft, Lead, LatestContext, WebsitePage } from "@/src/lib/types";
 
 type ActionKey = "ingest" | "agent1" | "agent2" | "agent3" | "refresh";
@@ -141,7 +142,7 @@ export default function LeadDetailPage() {
     } catch (actionError) {
       setError(getErrorMessage(actionError));
     } finally {
-      await loadContext();
+      await Promise.all([loadLead(), loadContext()]);
       setLoadingByAction((prev) => ({ ...prev, [key]: false }));
     }
   }
@@ -155,12 +156,80 @@ export default function LeadDetailPage() {
   }, [leadId]);
 
   const isBusy = Object.values(loadingByAction).some(Boolean);
-  const stageStates: StageState[] = [
-    context?.snapshot ? "done" : "active",
-    context?.agent1_output ? "done" : context?.snapshot ? "active" : "pending",
-    latestDraft ? "done" : context?.agent1_output ? "active" : "pending",
-    context?.agent3_decision ? "done" : latestDraft ? "active" : "pending"
+  const summary = lead ? resolveLeadPipeline(lead) : null;
+
+  const stageItems: Array<{ label: string; state: StageState }> = [
+    {
+      label: "NEW",
+      state: summary && (summary.has_snapshot || summary.has_agent1_output || summary.has_draft || summary.has_agent3_verdict) ? "done" : "active"
+    },
+    { label: "INGESTED", state: summary?.has_snapshot ? "done" : summary ? "active" : "pending" },
+    { label: "AGENT1", state: summary?.has_agent1_output ? "done" : summary?.has_snapshot ? "active" : "pending" },
+    { label: "AGENT2", state: summary?.has_draft ? "done" : summary?.has_agent1_output ? "active" : "pending" },
+    { label: "AGENT3", state: summary?.has_agent3_verdict ? "done" : summary?.has_draft ? "active" : "pending" },
+    {
+      label:
+        summary?.computed_stage === "sent"
+          ? "SENT"
+          : summary?.computed_stage === "replied"
+            ? "REPLIED"
+            : summary?.computed_stage === "converted"
+              ? "CONVERTED"
+              : summary?.computed_stage === "archived"
+                ? "ARCHIVED"
+                : summary?.computed_stage === "needs_review"
+                  ? "NEEDS REVIEW"
+                  : summary?.computed_stage === "approved"
+                    ? "APPROVED"
+                    : "PENDING REVIEW",
+      state:
+        summary &&
+        ["approved", "needs_review", "sent", "replied", "converted", "archived"].includes(summary.computed_stage)
+          ? "done"
+          : summary?.has_agent3_verdict
+            ? "active"
+            : "pending"
+    }
   ];
+
+  const controls = {
+    ingest: {
+      disabled: !lead?.website_url,
+      reason: !lead ? "Lead is loading." : !lead.website_url ? "Website URL is required before ingestion." : null
+    },
+    agent1: {
+      disabled: !summary?.has_snapshot,
+      reason: !lead
+        ? "Lead is loading."
+        : !summary?.has_snapshot
+          ? "Run Ingest Website first."
+          : null
+    },
+    agent2: {
+      disabled: !summary?.has_agent1_output,
+      reason: !lead
+        ? "Lead is loading."
+        : !summary?.has_agent1_output
+          ? "Run Agent 1 first."
+          : null
+    },
+    agent3: {
+      disabled: !summary?.has_draft,
+      reason: !lead
+        ? "Lead is loading."
+        : !summary?.has_draft
+          ? "Run Agent 2 first."
+          : null
+    },
+    refresh: {
+      disabled: !summary?.has_snapshot,
+      reason: !lead
+        ? "Lead is loading."
+        : !summary?.has_snapshot
+          ? "No context to refresh until a website snapshot exists."
+          : null
+    }
+  };
 
   return (
     <div className="stack">
@@ -188,8 +257,9 @@ export default function LeadDetailPage() {
         onAgent1={() => void runAction("agent1", "Run Agent 1", runAgent1)}
         onAgent2={() => void runAction("agent2", "Run Agent 2", runAgent2)}
         onAgent3={() => void runAction("agent3", "Run Agent 3", runAgent3)}
-        onRefresh={() => void runAction("refresh", "Refresh Context", async () => loadContext())}
-        stageStates={stageStates}
+        onRefresh={() => void runAction("refresh", "Refresh Context", async () => undefined)}
+        stageItems={stageItems}
+        controls={controls}
       />
 
       <LatestContextCard

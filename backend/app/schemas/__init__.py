@@ -1,7 +1,9 @@
 from app.schemas.auth import DevLoginRequest, DevLoginResponse
 from app.schemas.agent1 import Agent1RunResponse, LatestContextResponse, LatestContextSnapshot
 from app.schemas.agent3 import Agent3RunResponse, FinalEmailRead
-from app.schemas.email_draft import EmailDraftCreate, EmailDraftRead
+from app.schemas.automation_settings import WorkspaceAutomationSettingsRead, WorkspaceAutomationSettingsUpdate
+from app.schemas.email_draft import DraftReviewQueueSummary, EmailDraftCreate, EmailDraftRead
+from app.schemas.gmail_integration import GmailCallbackResponse, GmailConnectUrlResponse, GmailStatusResponse
 from app.schemas.lead import (
     LeadCreate,
     LeadImportDuplicate,
@@ -10,6 +12,7 @@ from app.schemas.lead import (
     LeadImportRequest,
     LeadImportResponse,
     LeadListResponse,
+    LeadPipelineSummary,
     LeadRead,
     LeadUpdate,
 )
@@ -31,6 +34,7 @@ from app.schemas.website_snapshot import (
     WebsiteSnapshotRead,
 )
 from app.schemas.workspace_profile import WorkspaceProfileRead, WorkspaceProfileUpdate
+from app.schemas.workspace_ai_strategy import WorkspaceAIStrategyRead, WorkspaceAIStrategyUpdate
 from app.schemas.workspace import MeResponse, UserCreate, UserRead, WorkspaceCreate, WorkspaceRead
 
 __all__ = [
@@ -38,8 +42,14 @@ __all__ = [
     "DevLoginResponse",
     "Agent1RunResponse",
     "Agent3RunResponse",
+    "WorkspaceAutomationSettingsRead",
+    "WorkspaceAutomationSettingsUpdate",
     "EmailDraftCreate",
     "EmailDraftRead",
+    "DraftReviewQueueSummary",
+    "GmailConnectUrlResponse",
+    "GmailCallbackResponse",
+    "GmailStatusResponse",
     "FinalEmailRead",
     "LeadCreate",
     "LeadImportDuplicate",
@@ -48,6 +58,7 @@ __all__ = [
     "LeadImportRequest",
     "LeadImportResponse",
     "LeadListResponse",
+    "LeadPipelineSummary",
     "LeadRead",
     "LeadUpdate",
     "ProspectRead",
@@ -62,6 +73,8 @@ __all__ = [
     "WorkspaceSettingsUpdate",
     "WorkspaceProfileRead",
     "WorkspaceProfileUpdate",
+    "WorkspaceAIStrategyRead",
+    "WorkspaceAIStrategyUpdate",
     "LatestContextResponse",
     "LatestContextSnapshot",
     "WebsitePageRead",

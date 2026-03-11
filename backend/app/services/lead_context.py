@@ -5,12 +5,15 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.workspace_ai_strategy import WorkspaceAIStrategy
 from app.models.website_page import WebsitePage
 from app.models.workspace_profile import WorkspaceProfile
+from app.services.workspace_ai_strategy import build_strategy_context
 
 
 def build_prepared_lead_context(*, db: Session, workspace_id: UUID, lead_id: UUID) -> dict[str, object]:
     profile = db.get(WorkspaceProfile, workspace_id)
+    workspace_ai_strategy = db.get(WorkspaceAIStrategy, workspace_id)
     pages = db.scalars(
         select(WebsitePage)
         .where(WebsitePage.workspace_id == workspace_id, WebsitePage.lead_id == lead_id)
@@ -51,4 +54,5 @@ def build_prepared_lead_context(*, db: Session, workspace_id: UUID, lead_id: UUI
             "emails": sorted(emails),
             "phones": sorted(phones),
         },
+        "workspace_ai_strategy": build_strategy_context(workspace_ai_strategy),
     }
