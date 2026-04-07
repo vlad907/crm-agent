@@ -232,16 +232,25 @@ export default function LeadDetailPage() {
   };
 
   return (
-    <div className="stack">
-      <section className="hero-panel">
+    <div className="stack lead-detail-page">
+      <section className="hero-panel lead-detail-hero">
+        <Link href="/" className="lead-detail-back">
+          ← Back to Leads
+        </Link>
         <header className="page-header" style={{ marginBottom: 0 }}>
           <div>
-            <h1 className="page-title">Lead Detail</h1>
-            <p className="page-subtitle">Track pipeline steps and inspect AI context artifacts for this lead.</p>
+            <h1 className="page-title">
+              {lead ? `${lead.name} · ${lead.company}` : "Lead Detail"}
+            </h1>
+            <p className="page-subtitle">
+              {lead ? "Track pipeline steps and AI context" : "Loading..."}
+            </p>
           </div>
-          <Link href="/" className="btn-secondary btn-link">
-            Back
-          </Link>
+          {lead && summary ? (
+            <span className={`lead-detail-status ${summary.computed_stage}`}>
+              {summary.computed_stage.replace(/_/g, " ")}
+            </span>
+          ) : null}
         </header>
       </section>
 
@@ -272,35 +281,41 @@ export default function LeadDetailPage() {
         onToggleSnapshot={() => setShowFullSnapshot((prev) => !prev)}
       />
 
-      <section className="card stack">
+      <section className="card stack website-pages-card">
         <h2>Ingested Website Pages</h2>
         {pagesLoading ? (
           <div className="muted">Loading website pages...</div>
         ) : websitePages.length === 0 ? (
           <div className="muted">No website pages found. Run Ingest Website to populate this section.</div>
         ) : (
-          <div className="stack">
+          <div className="website-pages-grid">
             {websitePages.map((page) => (
-              <article key={page.id} className="subcard stack">
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <strong>{page.page_type.toUpperCase()}</strong>
-                  <span className="muted">{new Date(page.created_at).toLocaleString()}</span>
+              <article key={page.id} className="website-page-card">
+                <div className="website-page-header">
+                  <span className="website-page-type">{page.page_type}</span>
+                  <span className="website-page-date">{new Date(page.created_at).toLocaleDateString()}</span>
                 </div>
-                <a href={page.url} target="_blank" rel="noreferrer" className="external-link">
+                <a href={page.url} target="_blank" rel="noreferrer" className="website-page-url">
                   {page.url}
                 </a>
-                <div className="row">
-                  <div className="field">
-                    <label>Extracted Emails</label>
-                    <div className="muted">{page.extracted_emails.length ? page.extracted_emails.join(", ") : "-"}</div>
+                {(page.extracted_emails.length > 0 || page.extracted_phones.length > 0) && (
+                  <div className="website-page-extracted">
+                    {page.extracted_emails.length > 0 && (
+                      <div className="website-page-field">
+                        <span className="website-page-field-label">Emails</span>
+                        <span>{page.extracted_emails.join(", ")}</span>
+                      </div>
+                    )}
+                    {page.extracted_phones.length > 0 && (
+                      <div className="website-page-field">
+                        <span className="website-page-field-label">Phones</span>
+                        <span>{page.extracted_phones.join(", ")}</span>
+                      </div>
+                    )}
                   </div>
-                  <div className="field">
-                    <label>Extracted Phones</label>
-                    <div className="muted">{page.extracted_phones.length ? page.extracted_phones.join(", ") : "-"}</div>
-                  </div>
-                </div>
-                <details>
-                  <summary style={{ cursor: "pointer", fontWeight: 600 }}>View Page Text</summary>
+                )}
+                <details className="website-page-details">
+                  <summary>View page text</summary>
                   <pre className="snapshot-text">{page.raw_text}</pre>
                 </details>
               </article>

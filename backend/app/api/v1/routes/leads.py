@@ -32,13 +32,14 @@ from app.models.lead_status import (
     LEAD_STATUS_SET,
     normalize_lead_status,
 )
-from app.models.workspace_ai_strategy import WorkspaceAIStrategy
 from app.models.website_page import WebsitePage
 from app.models.website_snapshot import WebsiteSnapshot
 from app.schemas.agent1 import Agent1RunResponse, LatestContextResponse, LatestContextSnapshot
 from app.schemas.agent3 import FinalEmailRead
 from app.schemas.email_draft import EmailDraftRead
 from app.schemas.lead import (
+    LeadBulkDeleteRequest,
+    LeadBulkDeleteResponse,
     LeadCreate,
     LeadImportDuplicate,
     LeadImportError,
@@ -62,7 +63,7 @@ from app.services.openai_client import (
 from app.services.scrape import WebsiteFetchError
 from app.services.website_ingestion import ingest_website_pages
 from app.services.workspace_credentials import resolve_openai_api_key
-from app.services.workspace_ai_strategy import build_strategy_context
+from app.services.workspace_ai_strategy import build_strategy_context, ensure_workspace_strategy_generated
 
 router = APIRouter(prefix="/leads", tags=["Leads"])
 logger = logging.getLogger(__name__)
@@ -293,6 +294,21 @@ def list_leads(
     lead_items = [_with_pipeline_summary(item, pipeline_map.get(item.id)) for item in items]
     total = db.scalar(count_stmt) or 0
     return LeadListResponse(items=lead_items, total=total, offset=offset, limit=limit)
+
+
+@router.post("/bulk-delete", response_model=LeadBulkDeleteResponse)
+def bulk_delete_leads(
+    payload: LeadBulkDeleteRequest,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
+) -> LeadBulkDeleteResponse:
+    stmt = delete(Lead).where(
+        Lead.workspace_id == ctx.workspace_id,
+        Lead.id.in_(payload.lead_ids),
+    )
+    result = db.execute(stmt)
+    db.commit()
+    return LeadBulkDeleteResponse(deleted_count=result.rowcount or 0)
 
 
 @router.get("/{lead_id}", response_model=LeadRead)
@@ -546,7 +562,13 @@ def run_agent2_for_lead(
     lead.status = LEAD_STATUS_DRAFTING
     db.commit()
     db.refresh(lead)
-    strategy_context = build_strategy_context(db.get(WorkspaceAIStrategy, ctx.workspace_id))
+
+    strategy = ensure_workspace_strategy_generated(
+        db=db,
+        workspace_id=ctx.workspace_id,
+        api_key=openai_api_key,
+    )
+    strategy_context = build_strategy_context(strategy, lead_category=lead.industry)
     try:
         agent2_output = run_agent2(
             lead_name=lead.name,

@@ -81,6 +81,15 @@ class ProspectImportResponse(BaseModel):
     errors: list[ProspectImportError]
 
 
+class LocationSuggestionItem(BaseModel):
+    description: str
+    place_id: str
+
+
+class LocationSuggestionsResponse(BaseModel):
+    suggestions: list[LocationSuggestionItem]
+
+
 class ProspectRunSearchRequest(BaseModel):
     location: str = Field(min_length=1)
     radius: int = Field(default=15000, ge=1, le=50000)
@@ -115,3 +124,11 @@ class ProspectConvertResponse(BaseModel):
     skipped_count: int
     converted_leads: list[LeadRead]
     skipped: list[ProspectConvertSkipped]
+
+
+class ProspectBulkDeleteRequest(BaseModel):
+    prospect_ids: list[UUID] = Field(min_length=1, max_length=500)
+
+
+class ProspectBulkDeleteResponse(BaseModel):
+    deleted_count: int

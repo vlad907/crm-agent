@@ -23,6 +23,8 @@ async def attach_request_identity(request: Request, call_next):
     bypass_paths = {
         "/health",
         f"{settings.api_prefix}/integrations/gmail/callback",
+        f"{settings.api_prefix}/auth/login",
+        f"{settings.api_prefix}/workspaces",
     }
     if request.url.path in bypass_paths:
         return await call_next(request)

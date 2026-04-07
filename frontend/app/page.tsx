@@ -9,6 +9,7 @@ import { LeadListPagination } from "@/src/components/leads/list/LeadListPaginati
 import { LeadListTable } from "@/src/components/leads/list/LeadListTable";
 import {
   ApiError,
+  deleteLeadsBulk,
   getLatestContext,
   getLeads,
   ingestWebsite,
@@ -108,6 +109,7 @@ export default function LeadsPage() {
   const [rowActionState, setRowActionState] = useState<Record<string, { ingest: boolean; runAi: boolean }>>({});
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
   const [bulkProgress, setBulkProgress] = useState<{ label: string; completed: number; total: number } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [statusInput, setStatusInput] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -162,45 +164,33 @@ export default function LeadsPage() {
   const stageCounts = useMemo(() => {
     const counts = {
       total: leads.length,
-      discovered: 0,
       imported: 0,
       researching: 0,
       researched: 0,
-      drafting: 0,
       draft_ready: 0,
       needs_review: 0,
       approved: 0,
       sent: 0,
-      replied: 0,
-      converted: 0,
       archived: 0
     };
 
     leads.forEach((lead) => {
       const summary = resolveLeadPipeline(lead);
       const stage = summary.computed_stage;
-      if (stage === "sent") {
+      if (["sent", "replied", "converted"].includes(stage)) {
         counts.sent += 1;
-      } else if (stage === "replied") {
-        counts.replied += 1;
-      } else if (stage === "converted") {
-        counts.converted += 1;
       } else if (stage === "archived") {
         counts.archived += 1;
       } else if (stage === "approved") {
         counts.approved += 1;
       } else if (stage === "needs_review") {
         counts.needs_review += 1;
-      } else if (stage === "draft_ready") {
+      } else if (stage === "draft_ready" || stage === "drafting") {
         counts.draft_ready += 1;
-      } else if (stage === "drafting") {
-        counts.drafting += 1;
       } else if (stage === "researched") {
         counts.researched += 1;
       } else if (stage === "researching") {
         counts.researching += 1;
-      } else if (stage === "discovered") {
-        counts.discovered += 1;
       } else {
         counts.imported += 1;
       }
@@ -343,6 +333,23 @@ export default function LeadsPage() {
     }
   }
 
+  async function runBulkDelete(): Promise<void> {
+    if (selectedVisibleIds.length === 0) return;
+    setDeleting(true);
+    setError(null);
+    setActionMessage(null);
+    try {
+      const result = await deleteLeadsBulk(selectedVisibleIds);
+      setActionMessage(`Deleted ${result.deleted_count} lead(s).`);
+      setSelectedLeadIds([]);
+      await fetchRows(offset, statusFilter, searchFilter);
+    } catch (deleteError) {
+      setError(getErrorMessage(deleteError));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const canGoPrev = offset > 0;
   const canGoNext = useMemo(() => {
     if (!leadList) {
@@ -364,16 +371,11 @@ export default function LeadsPage() {
       </section>
 
       <section className="card surface-metrics stack">
-        <h2>Pipeline Overview</h2>
-        <div className="muted">DISCOVERED -&gt; IMPORTED -&gt; RESEARCHING -&gt; RESEARCHED -&gt; DRAFTING -&gt; DRAFT READY -&gt; APPROVED/NEEDS REVIEW -&gt; SENT</div>
-        <div className="pipeline-lane pipeline-lane-wide">
-          <div className="pipeline-stage">
+        <h2 className="section-title">Pipeline Overview</h2>
+        <div className="pipeline-lane pipeline-lane-clean">
+          <div className="pipeline-stage pipeline-stage-total">
             <div className="metric-label">Total</div>
             <div className="metric-value">{stageCounts.total}</div>
-          </div>
-          <div className="pipeline-stage">
-            <div className="metric-label">Discovered</div>
-            <div className="metric-value">{stageCounts.discovered}</div>
           </div>
           <div className="pipeline-stage">
             <div className="metric-label">Imported</div>
@@ -386,10 +388,6 @@ export default function LeadsPage() {
           <div className="pipeline-stage">
             <div className="metric-label">Researched</div>
             <div className="metric-value">{stageCounts.researched}</div>
-          </div>
-          <div className="pipeline-stage">
-            <div className="metric-label">Drafting</div>
-            <div className="metric-value">{stageCounts.drafting}</div>
           </div>
           <div className="pipeline-stage">
             <div className="metric-label">Draft Ready</div>
@@ -406,14 +404,6 @@ export default function LeadsPage() {
           <div className="pipeline-stage">
             <div className="metric-label">Sent</div>
             <div className="metric-value">{stageCounts.sent}</div>
-          </div>
-          <div className="pipeline-stage">
-            <div className="metric-label">Replied</div>
-            <div className="metric-value">{stageCounts.replied}</div>
-          </div>
-          <div className="pipeline-stage">
-            <div className="metric-label">Converted</div>
-            <div className="metric-value">{stageCounts.converted}</div>
           </div>
           <div className="pipeline-stage">
             <div className="metric-label">Archived</div>
@@ -462,6 +452,9 @@ export default function LeadsPage() {
               </button>
               <button type="button" className="btn-secondary" disabled={isBulkRunning} onClick={() => void runBulk("agent3")}>
                 Verify Drafts
+              </button>
+              <button type="button" className="btn-danger" disabled={isBulkRunning || deleting} onClick={() => void runBulkDelete()}>
+                {deleting ? "Deleting..." : "Delete Selected"}
               </button>
               <button type="button" className="btn-secondary" disabled={isBulkRunning} onClick={() => setSelectedLeadIds([])}>
                 Clear Selection

@@ -4,13 +4,17 @@ import json
 import logging
 import re
 import time
-from typing import Any
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from app.core.config import settings
 from app.models.workspace_ai_strategy import WorkspaceAIStrategy
 from app.models.workspace_profile import WorkspaceProfile
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 from app.services.openai_client import (
     OpenAIClientError,
     OpenAIConfigurationError,
@@ -33,6 +37,10 @@ GENERIC_STRATEGY_DRIFT_TERMS = {
     "ecommerce funnel",
 }
 
+# When profile indicates non-IT business (solar, HVAC, legal, etc.), reject AI output that defaults to IT
+IT_DRIFT_TERMS = {"it solutions", "it support", "pos support", "pos systems", "network infrastructure", "managed it"}
+NON_IT_PROFILE_SIGNALS = ["solar", "photovoltaic", "hvac", "plumbing", "electrical", "roofing", "legal", "law firm", "attorney"]
+
 BUSINESS_MODEL_KEYWORDS: list[tuple[str, list[str]]] = [
     ("managed_it_services", ["managed it", "msp", "it support", "helpdesk", "network monitoring"]),
     ("onsite_it_services", ["onsite", "on-site", "field service", "site visit", "truck roll", "install"]),
@@ -42,105 +50,12 @@ BUSINESS_MODEL_KEYWORDS: list[tuple[str, list[str]]] = [
     ("software_saas", ["saas", "software platform", "subscription software", "product analytics"]),
     ("marketing_agency", ["marketing agency", "paid ads", "seo", "creative campaign"]),
     ("crm_automation", ["crm automation", "sales automation", "outreach automation"]),
-]
-
-INDUSTRY_CATEGORY_LIBRARY: list[tuple[list[str], list[dict[str, str]]]] = [
-    (
-        ["restaurant", "dining", "food service"],
-        [
-            {"category": "restaurant", "display_name": "Restaurants"},
-            {"category": "coffee_shop", "display_name": "Coffee Shops"},
-            {"category": "bar_or_pub", "display_name": "Bars & Pubs"},
-        ],
-    ),
-    (
-        ["hospitality", "hotel", "lodging"],
-        [
-            {"category": "hotel", "display_name": "Hotels"},
-            {"category": "boutique_hotel", "display_name": "Boutique Hotels"},
-            {"category": "restaurant", "display_name": "Restaurant Groups"},
-        ],
-    ),
-    (
-        ["retail", "store", "shop"],
-        [
-            {"category": "retail_store", "display_name": "Retail Stores"},
-            {"category": "franchise_retail", "display_name": "Franchise Retail"},
-        ],
-    ),
-    (
-        ["medical", "healthcare", "clinic", "dental"],
-        [
-            {"category": "medical_office", "display_name": "Medical Offices"},
-            {"category": "dental_practice", "display_name": "Dental Practices"},
-        ],
-    ),
-]
-
-PAIN_POINT_LIBRARY: list[dict[str, Any]] = [
-    {
-        "key": "wifi_reliability_peak_hours",
-        "label": "Wi-Fi reliability during peak customer traffic",
-        "keywords": ["wifi", "wi-fi", "wireless"],
-    },
-    {
-        "key": "pos_network_stability",
-        "label": "POS network stability at checkout",
-        "keywords": ["pos", "point of sale", "checkout", "terminal"],
-    },
-    {
-        "key": "camera_system_uptime",
-        "label": "Camera system uptime and remote access reliability",
-        "keywords": ["camera", "surveillance", "cctv", "nvr"],
-    },
-    {
-        "key": "network_uptime_for_daily_operations",
-        "label": "Network uptime for daily operations",
-        "keywords": ["network", "uptime", "reliability", "internet"],
-    },
-    {
-        "key": "expansion_and_cabling_readiness",
-        "label": "Cabling and infrastructure readiness for expansions",
-        "keywords": ["cabling", "wiring", "install", "expansion"],
-    },
-    {
-        "key": "onsite_issue_resolution_speed",
-        "label": "Speed of onsite issue resolution",
-        "keywords": ["onsite", "on-site", "field", "dispatch"],
-    },
-]
-
-SERVICE_ANGLE_LIBRARY: list[dict[str, Any]] = [
-    {
-        "key": "guest_wifi_and_network_stability",
-        "label": "Guest Wi-Fi and network stability support",
-        "why_relevant": "Improves day-to-day reliability for front-of-house operations and customer experience.",
-        "keywords": ["wifi", "network", "wireless"],
-    },
-    {
-        "key": "pos_and_payment_network_hardening",
-        "label": "POS and payment network hardening",
-        "why_relevant": "Reduces checkout disruptions by stabilizing POS connectivity and segmentation.",
-        "keywords": ["pos", "checkout", "payment", "terminal"],
-    },
-    {
-        "key": "camera_and_backoffice_network_reliability",
-        "label": "Camera and back-office network reliability",
-        "why_relevant": "Keeps camera systems and operational back-office systems consistently reachable.",
-        "keywords": ["camera", "surveillance", "backoffice", "nvr"],
-    },
-    {
-        "key": "onsite_network_assessment_and_remediation",
-        "label": "Onsite network assessment and remediation plan",
-        "why_relevant": "Fits field-service business models where local infrastructure quality drives uptime.",
-        "keywords": ["onsite", "install", "assessment", "field"],
-    },
-    {
-        "key": "structured_cabling_and_location_expansion_support",
-        "label": "Structured cabling and location expansion support",
-        "why_relevant": "Supports growing businesses adding locations, terminals, or camera endpoints.",
-        "keywords": ["cabling", "wiring", "expansion", "location"],
-    },
+    ("solar_installation", ["solar", "pv", "photovoltaic", "rooftop solar", "solar panel"]),
+    ("home_services", ["hvac", "plumbing", "electrical", "roofing", "contractor"]),
+    ("legal_services", ["legal", "law firm", "attorney", "litigation", "compliance"]),
+    ("professional_services", ["consulting", "advisory", "professional services"]),
+    ("real_estate", ["real estate", "property management", "commercial real estate"]),
+    ("healthcare_services", ["healthcare", "medical", "dental", "clinic", "practice"]),
 ]
 
 CTA_LIBRARY_BY_MODEL: list[tuple[list[str], list[dict[str, str]]]] = [
@@ -166,6 +81,21 @@ CTA_LIBRARY_BY_MODEL: list[tuple[list[str], list[dict[str, str]]]] = [
             {"key": "demo", "label": "Offer a brief product/service walkthrough"},
         ],
     ),
+    (
+        ["solar_installation", "home_services"],
+        [
+            {"key": "site_assessment", "label": "Offer a free site assessment"},
+            {"key": "consultation", "label": "Offer a consultation call"},
+            {"key": "quote", "label": "Offer a no-obligation quote"},
+        ],
+    ),
+    (
+        ["legal_services", "professional_services", "real_estate", "healthcare_services"],
+        [
+            {"key": "consultation", "label": "Offer a consultation call"},
+            {"key": "discovery_call", "label": "Offer a short discovery call"},
+        ],
+    ),
 ]
 
 STRATEGY_JSON_SCHEMA: dict[str, Any] = {
@@ -176,7 +106,7 @@ STRATEGY_JSON_SCHEMA: dict[str, Any] = {
         "core_positioning",
         "ideal_customers",
         "priority_pain_points",
-        "service_angles",
+        "rapport_points",
         "cta_recommendations",
         "guardrails",
     ],
@@ -210,17 +140,16 @@ STRATEGY_JSON_SCHEMA: dict[str, Any] = {
                 },
             },
         },
-        "service_angles": {
+        "rapport_points": {
             "type": "array",
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["key", "label", "best_for_categories", "why_relevant"],
+                "required": ["category", "display_name", "hooks"],
                 "properties": {
-                    "key": {"type": "string"},
-                    "label": {"type": "string"},
-                    "best_for_categories": {"type": "array", "items": {"type": "string"}},
-                    "why_relevant": {"type": "string"},
+                    "category": {"type": "string"},
+                    "display_name": {"type": "string"},
+                    "hooks": {"type": "array", "items": {"type": "string"}},
                 },
             },
         },
@@ -253,13 +182,24 @@ STRATEGY_SYSTEM_PROMPT = """You are an AI Outreach Strategist for B2B outbound.
 Generate a practical strategy strictly grounded in the workspace profile.
 Return JSON only matching the required schema.
 
-Strict constraints:
-- Ground ideal_customers in industries_served; do not invent unrelated verticals.
-- Ground priority_pain_points in service_specialties; avoid generic sales/CRM pain unless profile explicitly provides it.
-- Ground service_angles in actual deliverables this business can provide.
-- Match CTA style to the business model (onsite assessment, walkthrough, consultation, review).
-- Do not suggest ecommerce growth or email automation strategies unless explicitly present in the profile.
-- Keep recommendations concrete, operational, and profile-specific.
+CRITICAL — BUSINESS TYPE: The business_name and service_specialties define the PRIMARY business type.
+- If the profile says solar, photovoltaic, solar panels, or solar installation → generate SOLAR-specific strategy:
+  target categories (e.g. commercial property owners, restaurants, retail), pain points (high utility costs, roof suitability,
+  energy savings, ROI on solar), CTAs (site assessment, energy audit, quote).
+- If HVAC, plumbing, electrical, roofing → generate HOME SERVICES strategy.
+- If IT, MSP, networking, POS → generate IT strategy.
+- If legal, law firm → generate LEGAL strategy.
+- NEVER default to IT/restaurant when the profile clearly indicates a different business (e.g. solar, HVAC, legal).
+  Match the business type exactly.
+
+- ideal_customers: From industries_served and business_description. Each category = real target segment for THIS business type.
+- priority_pain_points: From service_specialties. Each pain = concrete challenge this business solves (solar: utility rates,
+  roof condition; HVAC: comfort, equipment age; IT: uptime, POS; legal: case load, compliance).
+- core_positioning: One sentence describing what THIS business does for THESE industries. Must match business_name and specialties.
+- rapport_points: 4-8 hooks per category, tailored to the business type and target industries.
+- cta_recommendations: Match business model (solar/home services: site assessment, quote; IT: walkthrough, health check; etc.).
+
+Honor preferred_tone, outreach_style, preferred_cta, do_not_mention. Keep everything concrete and profile-specific.
 """
 
 
@@ -336,50 +276,204 @@ def generate_workspace_outreach_strategy(
     raise OpenAIClientError("OpenAI request failed after retries")
 
 
-def build_strategy_context(strategy: WorkspaceAIStrategy | None) -> dict[str, Any]:
+def ensure_workspace_strategy_generated(
+    *,
+    db: "Session",
+    workspace_id: Any,
+    api_key: str | None = None,
+) -> WorkspaceAIStrategy | None:
+    """Auto-generate outreach strategy from workspace profile if missing. Used before agent 2 runs."""
+    profile = db.get(WorkspaceProfile, workspace_id)
+    strategy = db.get(WorkspaceAIStrategy, workspace_id)
+
+    if not _profile_has_content(profile):
+        return strategy
+
+    if strategy is not None and strategy.generated_strategy is not None:
+        return strategy
+
+    try:
+        generated = generate_workspace_outreach_strategy(
+            workspace_profile=profile,
+            api_key=api_key,
+        )
+    except (OpenAIConfigurationError, OpenAIRateLimitError, OpenAIClientError) as exc:
+        logger.warning(
+            "Auto-generate strategy failed workspace_id=%s error=%s; agent 2 will run with empty strategy",
+            workspace_id,
+            exc,
+        )
+        return strategy
+
+    if strategy is None:
+        strategy = WorkspaceAIStrategy(workspace_id=workspace_id)
+        db.add(strategy)
+
+    strategy.generated_strategy = generated
+    strategy.last_generated_at = datetime.now(timezone.utc)
+    strategy.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(strategy)
+    logger.info("Auto-generated workspace strategy workspace_id=%s", workspace_id)
+    return strategy
+
+
+def _profile_has_content(profile: WorkspaceProfile | None) -> bool:
+    if profile is None:
+        return False
+    if profile.business_name and profile.business_name.strip():
+        return True
+    if profile.business_description and profile.business_description.strip():
+        return True
+    if profile.industries_served and len(profile.industries_served) > 0:
+        return True
+    if profile.service_specialties and len(profile.service_specialties) > 0:
+        return True
+    return False
+
+
+def _normalize_category_for_match(value: str | None) -> str:
+    """Normalize category string for matching (e.g. 'Coffee Shop' -> 'coffee_shop')."""
+    if not value or not isinstance(value, str):
+        return ""
+    return _normalize_identifier(value.strip())
+
+
+# Lead industries that map to target categories (brewery/brewing → restaurants, etc.)
+_CATEGORY_ALIASES: dict[str, list[str]] = {
+    "brewing": ["restaurant", "hospitality", "food_beverage"],
+    "brewery": ["restaurant", "hospitality", "food_beverage"],
+    "beverage": ["restaurant", "hospitality", "food_beverage"],
+    "bar": ["restaurant", "hospitality"],
+    "pub": ["restaurant", "hospitality"],
+    "food": ["restaurant", "hospitality"],
+}
+
+
+def _resolve_matched_workspace_category(
+    lead_category: str | None,
+    target_categories: list[str],
+) -> str | None:
+    """Map lead/prospect category to a workspace target category if possible."""
+    if not lead_category or not target_categories:
+        return None
+    normalized_lead = _normalize_category_for_match(lead_category)
+    if not normalized_lead:
+        return None
+    target_norms = {_normalize_identifier(tc): tc for tc in target_categories}
+    for tc in target_categories:
+        tc_norm = _normalize_identifier(tc)
+        if tc_norm == normalized_lead:
+            return tc
+        if normalized_lead in tc_norm or tc_norm in normalized_lead:
+            return tc
+    for alias, candidates in _CATEGORY_ALIASES.items():
+        if alias in normalized_lead:
+            for cand in candidates:
+                c_norm = _normalize_identifier(cand)
+                if c_norm in target_norms:
+                    return target_norms[c_norm]
+                for tn, t in target_norms.items():
+                    if c_norm in tn or cand in tn or tn in c_norm:
+                        return t
+            return target_categories[0]
+    return None
+
+
+def build_strategy_context(
+    strategy: WorkspaceAIStrategy | None,
+    *,
+    lead_category: str | None = None,
+) -> dict[str, Any]:
     if strategy is None:
         return {
             "generated_strategy": None,
             "selected_target_categories": [],
             "selected_priority_pain_points": [],
-            "selected_service_angles": [],
             "selected_cta_style": None,
             "selected_target_category_details": [],
             "selected_priority_pain_point_details": [],
-            "selected_service_angle_details": [],
             "selected_cta_recommendation": None,
+            "rapport_points": [],
             "strategy_available": False,
             "selection_mode": "open",
+            "target_categories": [],
+            "matched_workspace_category": None,
+            "matched_category": None,
+            "pain_points_by_category": {},
+            "fallback_pain_points_for_category": [],
+            "fallback_service_angles_for_category": [],
+            "fallback_rapport_hooks_for_category": [],
         }
 
     generated = strategy.generated_strategy if isinstance(strategy.generated_strategy, dict) else None
     ideal_customers = _safe_object_list(generated, "ideal_customers")
     pain_points = _safe_object_list(generated, "priority_pain_points")
-    service_angles = _safe_object_list(generated, "service_angles")
+    rapport_points = _safe_object_list(generated, "rapport_points")
     ctas = _safe_object_list(generated, "cta_recommendations")
+    raw_target = (generated or {}).get("target_categories")
+    target_categories = [str(c) for c in (raw_target or []) if isinstance(c, str)]
+    if not target_categories:
+        target_categories = [item.get("category") for item in ideal_customers if item.get("category")]
+
+    pain_points_by_cat = (generated or {}).get("pain_points_by_category") or {}
+    service_angles_by_cat = (generated or {}).get("service_angles_by_category") or {}
+    rapport_hooks_by_cat = (generated or {}).get("rapport_hooks_by_category") or {}
 
     selected_categories = normalize_string_list(strategy.selected_target_categories)
     selected_pains = normalize_string_list(strategy.selected_priority_pain_points)
-    selected_angles = normalize_string_list(strategy.selected_service_angles)
     selected_cta = (strategy.selected_cta_style or "").strip() or None
 
     selected_category_details = _match_selected(ideal_customers, "category", selected_categories)
     selected_pain_details = _match_selected(pain_points, "key", selected_pains)
-    selected_angle_details = _match_selected(service_angles, "key", selected_angles)
     selected_cta_detail = _first_matching(ctas, "key", selected_cta)
+
+    matched_category = _resolve_matched_workspace_category(lead_category, target_categories)
+    fallback_pain_points: list[dict[str, Any]] = []
+    fallback_service_angles: list[str] = []
+    fallback_rapport_hooks: list[str] = []
+    if matched_category:
+        fallback_pain_points = pain_points_by_cat.get(matched_category, pain_points)
+        fallback_service_angles = service_angles_by_cat.get(matched_category, [])
+        fallback_rapport_hooks = rapport_hooks_by_cat.get(matched_category, [])
+        if not fallback_rapport_hooks:
+            rp = next((r for r in rapport_points if r.get("category") == matched_category), None)
+            if rp and rp.get("hooks"):
+                fallback_rapport_hooks = rp["hooks"]
+    if not fallback_pain_points and pain_points:
+        fallback_pain_points = pain_points
+    if not fallback_rapport_hooks and rapport_points:
+        for rp in rapport_points:
+            if isinstance(rp, dict) and rp.get("hooks"):
+                fallback_rapport_hooks.extend(rp["hooks"])
+        fallback_rapport_hooks = list(dict.fromkeys(fallback_rapport_hooks))
+
+    core_positioning = (generated or {}).get("core_positioning") if isinstance(generated, dict) else None
+    core_positioning = str(core_positioning).strip() if core_positioning else None
+
+    pbc_dict: dict[str, Any] = {}
+    if isinstance(pain_points_by_cat, dict):
+        pbc_dict = {str(k): v for k, v in pain_points_by_cat.items()}
 
     return {
         "generated_strategy": generated,
+        "core_positioning": core_positioning,
         "selected_target_categories": selected_categories,
         "selected_priority_pain_points": selected_pains,
-        "selected_service_angles": selected_angles,
         "selected_cta_style": selected_cta,
         "selected_target_category_details": selected_category_details,
         "selected_priority_pain_point_details": selected_pain_details,
-        "selected_service_angle_details": selected_angle_details,
         "selected_cta_recommendation": selected_cta_detail,
+        "rapport_points": rapport_points,
         "strategy_available": generated is not None,
-        "selection_mode": "selected_only" if (selected_categories or selected_pains or selected_angles or selected_cta) else "open",
+        "selection_mode": "selected_only" if (selected_categories or selected_pains or selected_cta) else "open",
+        "target_categories": target_categories,
+        "matched_workspace_category": matched_category,
+        "matched_category": matched_category,
+        "pain_points_by_category": pbc_dict,
+        "fallback_pain_points_for_category": fallback_pain_points,
+        "fallback_service_angles_for_category": fallback_service_angles,
+        "fallback_rapport_hooks_for_category": fallback_rapport_hooks,
     }
 
 
@@ -436,11 +530,21 @@ def _classify_business_model(profile_payload: dict[str, Any]) -> list[str]:
         if _contains_any(signal_text, keywords):
             classifications.append(key)
 
-    if not classifications:
+    if not classifications and signal_text:
         if _contains_any(signal_text, ["it", "network", "wifi", "pos", "camera", "cabling"]):
             classifications.extend(["managed_it_services", "networking_and_pos_support"])
         elif _contains_any(signal_text, ["saas", "software"]):
             classifications.append("software_saas")
+        elif _contains_any(signal_text, ["solar", "pv", "photovoltaic"]):
+            classifications.append("solar_installation")
+        elif _contains_any(signal_text, ["legal", "law", "attorney"]):
+            classifications.append("legal_services")
+        elif _contains_any(signal_text, ["consulting", "advisory"]):
+            classifications.append("professional_services")
+        elif _contains_any(signal_text, ["real estate", "property"]):
+            classifications.append("real_estate")
+        elif _contains_any(signal_text, ["healthcare", "medical", "dental"]):
+            classifications.append("healthcare_services")
 
     if not classifications:
         classifications.append("general_b2b_services")
@@ -488,7 +592,7 @@ def _sanitize_generated_strategy(raw: dict[str, Any]) -> dict[str, Any]:
         "core_positioning": str(raw.get("core_positioning") or "").strip(),
         "ideal_customers": [],
         "priority_pain_points": [],
-        "service_angles": [],
+        "rapport_points": [],
         "cta_recommendations": [],
         "guardrails": {"avoid_claims": [], "avoid_tone": [], "notes": []},
     }
@@ -520,24 +624,21 @@ def _sanitize_generated_strategy(raw: dict[str, Any]) -> dict[str, Any]:
             continue
         sanitized["priority_pain_points"].append({"key": key, "label": label, "why_relevant": why_relevant})
 
-    for item in _safe_object_list(raw, "service_angles"):
-        key = _normalize_identifier(str(item.get("key") or ""))
-        label = str(item.get("label") or "").strip()
-        why_relevant = str(item.get("why_relevant") or "").strip()
-        best_for = normalize_string_list(
-            [_normalize_identifier(v) for v in item.get("best_for_categories")]
-            if isinstance(item.get("best_for_categories"), list)
+    for item in _safe_object_list(raw, "rapport_points"):
+        category = _normalize_identifier(str(item.get("category") or ""))
+        display_name = str(item.get("display_name") or "").strip()
+        hooks_raw = item.get("hooks")
+        hooks = (
+            [str(h).strip() for h in hooks_raw if isinstance(h, str) and str(h).strip()]
+            if isinstance(hooks_raw, list)
             else []
         )
-        if not key or not label:
+        if not category or not hooks:
             continue
-        sanitized["service_angles"].append(
-            {
-                "key": key,
-                "label": label,
-                "best_for_categories": best_for,
-                "why_relevant": why_relevant,
-            }
+        if not display_name:
+            display_name = category.replace("_", " ").title()
+        sanitized["rapport_points"].append(
+            {"category": category, "display_name": display_name, "hooks": hooks[:12]}
         )
 
     for item in _safe_object_list(raw, "cta_recommendations"):
@@ -562,6 +663,40 @@ def _sanitize_generated_strategy(raw: dict[str, Any]) -> dict[str, Any]:
     return sanitized
 
 
+def _build_pain_points_by_category(
+    ideal_customers: list[dict[str, Any]],
+    priority_pain_points: list[dict[str, Any]],
+    profile_payload: dict[str, Any],
+) -> dict[str, list[dict[str, Any]]]:
+    """Build category-keyed pain points. Each category gets the full list (workspace-approved)."""
+    categories = [item["category"] for item in ideal_customers]
+    result: dict[str, list[dict[str, Any]]] = {}
+    for cat in categories:
+        result[cat] = list(priority_pain_points)
+    return result
+
+
+def _build_service_angles_by_category(
+    ideal_customers: list[dict[str, Any]],
+    profile_payload: dict[str, Any],
+) -> dict[str, list[str]]:
+    """Build category-keyed service angles from specialties and category context."""
+    specialties = normalize_string_list(profile_payload.get("service_specialties"))
+    result: dict[str, list[str]] = {}
+    for item in ideal_customers:
+        cat = item.get("category", "")
+        display_name = (item.get("display_name") or cat.replace("_", " ")).lower()
+        if not cat:
+            continue
+        angles: list[str] = []
+        for spec in specialties[:6]:
+            angles.append(f"{spec} for {display_name}")
+        if not angles:
+            angles = [f"Service delivery for {display_name}"]
+        result[cat] = angles
+    return result
+
+
 def _ground_strategy_to_profile(
     sanitized: dict[str, Any],
     profile_payload: dict[str, Any],
@@ -569,13 +704,25 @@ def _ground_strategy_to_profile(
 ) -> dict[str, Any]:
     fallback_categories = _derive_categories_from_profile(profile_payload, preclassified_models)
     fallback_pains = _derive_pain_points_from_profile(profile_payload, preclassified_models)
-    fallback_angles = _derive_service_angles_from_profile(profile_payload, preclassified_models, fallback_categories)
     fallback_ctas = _derive_cta_from_profile(preclassified_models)
 
+    profile_has_content = bool(_profile_signal_text(profile_payload))
     allowed_category_keys = {item["category"] for item in fallback_categories}
     allowed_pain_keys = {item["key"] for item in fallback_pains}
-    allowed_angle_keys = {item["key"] for item in fallback_angles}
     allowed_cta_keys = {item["key"] for item in fallback_ctas}
+    if profile_has_content:
+        for item in _safe_object_list(sanitized, "ideal_customers"):
+            cat = item.get("category")
+            if isinstance(cat, str) and cat.strip():
+                allowed_category_keys.add(_normalize_identifier(cat))
+        for item in _safe_object_list(sanitized, "priority_pain_points"):
+            key = item.get("key")
+            if isinstance(key, str) and key.strip():
+                allowed_pain_keys.add(_normalize_identifier(key))
+        for item in _safe_object_list(sanitized, "cta_recommendations"):
+            key = item.get("key")
+            if isinstance(key, str) and key.strip():
+                allowed_cta_keys.add(_normalize_identifier(key))
 
     ai_categories = [item for item in sanitized["ideal_customers"] if item["category"] in allowed_category_keys]
     ideal_customers = _merge_unique(ai_categories, fallback_categories, key="category", max_items=8)
@@ -587,14 +734,17 @@ def _ground_strategy_to_profile(
     if not priority_pain_points:
         priority_pain_points = fallback_pains
 
-    ai_angles = [item for item in sanitized["service_angles"] if item["key"] in allowed_angle_keys]
-    service_angles = _merge_unique(ai_angles, fallback_angles, key="key", max_items=8)
-    if not service_angles:
-        service_angles = fallback_angles
-
-    for angle in service_angles:
-        if not angle.get("best_for_categories"):
-            angle["best_for_categories"] = [item["category"] for item in ideal_customers[:3]]
+    allowed_rapport_categories = {item["category"] for item in ideal_customers}
+    if profile_has_content:
+        for item in _safe_object_list(sanitized, "rapport_points"):
+            cat = item.get("category")
+            if isinstance(cat, str) and cat.strip():
+                allowed_rapport_categories.add(_normalize_identifier(cat))
+    ai_rapport = [item for item in _safe_object_list(sanitized, "rapport_points") if item["category"] in allowed_rapport_categories]
+    fallback_rapport = _derive_rapport_from_ideal_customers(ideal_customers)
+    rapport_points = _merge_unique(ai_rapport, fallback_rapport, key="category", max_items=16)
+    if not rapport_points:
+        rapport_points = fallback_rapport
 
     ai_ctas = [item for item in sanitized["cta_recommendations"] if item["key"] in allowed_cta_keys]
     cta_recommendations = _merge_unique(ai_ctas, fallback_ctas, key="key", max_items=4)
@@ -631,48 +781,106 @@ def _ground_strategy_to_profile(
         ],
     )
 
+    target_categories = [item["category"] for item in ideal_customers]
+    pain_points_by_category = _build_pain_points_by_category(
+        ideal_customers, priority_pain_points, profile_payload
+    )
+    service_angles_by_category = _build_service_angles_by_category(
+        ideal_customers, profile_payload
+    )
+    rapport_hooks_by_category: dict[str, list[str]] = {}
+    for item in rapport_points:
+        if item.get("category") and item.get("hooks"):
+            rapport_hooks_by_category[item["category"]] = item["hooks"]
+    for cat in target_categories:
+        if cat not in rapport_hooks_by_category:
+            fallback = _derive_rapport_from_ideal_customers(
+                [c for c in ideal_customers if c["category"] == cat]
+            )
+            rapport_hooks_by_category[cat] = fallback[0]["hooks"] if fallback else []
+
     return {
         "business_model_classification": classification,
         "core_positioning": core_positioning,
+        "target_categories": target_categories,
         "ideal_customers": ideal_customers,
         "priority_pain_points": priority_pain_points,
-        "service_angles": service_angles,
+        "pain_points_by_category": pain_points_by_category,
+        "service_angles_by_category": service_angles_by_category,
+        "rapport_points": rapport_points,
+        "rapport_hooks_by_category": rapport_hooks_by_category,
         "cta_recommendations": cta_recommendations,
         "guardrails": {"avoid_claims": avoid_claims, "avoid_tone": avoid_tone, "notes": notes},
     }
 
 
-def _derive_categories_from_profile(profile_payload: dict[str, Any], classification: list[str]) -> list[dict[str, Any]]:
-    signal_text = _profile_signal_text(profile_payload)
-    categories: list[dict[str, Any]] = []
-    for keywords, templates in INDUSTRY_CATEGORY_LIBRARY:
-        if _contains_any(signal_text, keywords):
-            for template in templates:
-                categories.append(
-                    {
-                        "category": template["category"],
-                        "display_name": template["display_name"],
-                        "why_fit": "Matches industries explicitly listed in this workspace profile.",
-                        "priority": len(categories) + 1,
-                    }
-                )
+def _derive_rapport_from_ideal_customers(categories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Generate generic rapport hooks for any category — used when AI does not produce them. Works for all service angles."""
+    result: list[dict[str, Any]] = []
+    for item in categories:
+        cat = item.get("category", "")
+        display_name = item.get("display_name", cat.replace("_", " ").title())
+        result.append({
+            "category": cat,
+            "display_name": display_name,
+            "hooks": [
+                "daily operations",
+                "growth and expansion",
+                "customer experience",
+                "efficiency",
+                "seasonal demand",
+                "staff and team",
+            ],
+        })
+    return result
 
-    if not categories and "networking_and_pos_support" in classification:
-        categories = [
-            {"category": "restaurant", "display_name": "Restaurants", "why_fit": "Strong fit for Wi-Fi and POS reliability work.", "priority": 1},
-            {"category": "coffee_shop", "display_name": "Coffee Shops", "why_fit": "High dependency on stable guest Wi-Fi and POS uptime.", "priority": 2},
-            {"category": "retail_store", "display_name": "Retail Stores", "why_fit": "Retail checkout and camera systems depend on reliable networking.", "priority": 3},
-        ]
+
+def _derive_categories_from_profile(profile_payload: dict[str, Any], classification: list[str]) -> list[dict[str, Any]]:
+    """Derive categories dynamically from industries_served. No static library — fully profile-driven fallback."""
+    industries = normalize_string_list(profile_payload.get("industries_served"))
+    specialties = normalize_string_list(profile_payload.get("service_specialties"))
+    categories: list[dict[str, Any]] = []
+
+    for idx, industry in enumerate(industries[:8], start=1):
+        if not industry or not industry.strip():
+            continue
+        cat = _normalize_identifier(industry)
+        if not cat:
+            continue
+        display = industry.strip()
+        if len(display) > 60:
+            display = display[:57] + "..."
+        categories.append({
+            "category": cat,
+            "display_name": display,
+            "why_fit": "From industries_served in workspace profile.",
+            "priority": idx,
+        })
+
+    if not categories and specialties:
+        for idx, spec in enumerate(specialties[:8], start=1):
+            if not spec or not spec.strip():
+                continue
+            cat = _normalize_identifier(spec)
+            if not cat:
+                continue
+            display = spec.strip()
+            if len(display) > 60:
+                display = display[:57] + "..."
+            categories.append({
+                "category": cat,
+                "display_name": display,
+                "why_fit": "From service_specialties in workspace profile.",
+                "priority": idx,
+            })
 
     if not categories:
-        categories = [
-            {
-                "category": "local_smb_business",
-                "display_name": "Local SMB Businesses",
-                "why_fit": "Fallback target when profile industries are broad or unspecified.",
-                "priority": 1,
-            }
-        ]
+        categories = [{
+            "category": "profile_aligned_businesses",
+            "display_name": "Profile-aligned businesses",
+            "why_fit": "Add industries_served or service_specialties to your workspace profile for tailored categories.",
+            "priority": 1,
+        }]
 
     deduped = _merge_unique(categories, [], key="category", max_items=8)
     for index, item in enumerate(deduped, start=1):
@@ -681,61 +889,36 @@ def _derive_categories_from_profile(profile_payload: dict[str, Any], classificat
 
 
 def _derive_pain_points_from_profile(profile_payload: dict[str, Any], classification: list[str]) -> list[dict[str, Any]]:
-    signal_text = _profile_signal_text(profile_payload)
+    """Derive pain points dynamically from service_specialties. No static library — fully profile-driven fallback."""
+    specialties = normalize_string_list(profile_payload.get("service_specialties"))
+    description = (profile_payload.get("business_description") or "").strip()
     pains: list[dict[str, Any]] = []
-    for template in PAIN_POINT_LIBRARY:
-        if _contains_any(signal_text, template["keywords"]):
-            pains.append(
-                {
-                    "key": template["key"],
-                    "label": template["label"],
-                    "why_relevant": "Directly aligned to listed specialties and service deliverables.",
-                }
-            )
 
-    if not pains and any(model in classification for model in {"managed_it_services", "networking_and_pos_support"}):
-        pains = [
-            {
-                "key": "network_uptime_for_daily_operations",
-                "label": "Network uptime for daily operations",
-                "why_relevant": "Managed IT and network support workflows depend on reliable connectivity.",
-            }
-        ]
+    for idx, spec in enumerate(specialties[:6], start=1):
+        if not spec or not spec.strip():
+            continue
+        key = _normalize_identifier(spec)
+        if not key:
+            continue
+        label = spec.strip()
+        if len(label) > 80:
+            label = label[:77] + "..."
+        pains.append({
+            "key": key,
+            "label": f"Challenges related to {label}",
+            "why_relevant": "Aligned to service_specialties in workspace profile.",
+        })
+
+    if not pains and description:
+        key = _normalize_identifier(description[:40])
+        if key:
+            pains.append({
+                "key": key[:50],
+                "label": "Operational challenges relevant to your services",
+                "why_relevant": "Derived from business_description.",
+            })
 
     return _merge_unique(pains, [], key="key", max_items=8)
-
-
-def _derive_service_angles_from_profile(
-    profile_payload: dict[str, Any],
-    classification: list[str],
-    categories: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    signal_text = _profile_signal_text(profile_payload)
-    category_keys = [item["category"] for item in categories[:4]]
-
-    angles: list[dict[str, Any]] = []
-    for template in SERVICE_ANGLE_LIBRARY:
-        if _contains_any(signal_text, template["keywords"]):
-            angles.append(
-                {
-                    "key": template["key"],
-                    "label": template["label"],
-                    "best_for_categories": category_keys,
-                    "why_relevant": template["why_relevant"],
-                }
-            )
-
-    if not angles and "managed_it_services" in classification:
-        angles = [
-            {
-                "key": "onsite_network_assessment_and_remediation",
-                "label": "Onsite network assessment and remediation plan",
-                "best_for_categories": category_keys,
-                "why_relevant": "Managed IT positioning supports practical reliability assessments and fixes.",
-            }
-        ]
-
-    return _merge_unique(angles, [], key="key", max_items=8)
 
 
 def _derive_cta_from_profile(classification: list[str]) -> list[dict[str, str]]:
@@ -753,27 +936,39 @@ def _derive_cta_from_profile(classification: list[str]) -> list[dict[str, str]]:
 def _is_generic_core_positioning(core_positioning: str, profile_payload: dict[str, Any]) -> bool:
     lowered = core_positioning.lower()
     profile_text = _profile_signal_text(profile_payload)
+    # Reject marketing/ecommerce drift
     drift_detected = any(term in lowered for term in GENERIC_STRATEGY_DRIFT_TERMS)
-    if not drift_detected:
-        return False
-    return not any(term in profile_text for term in GENERIC_STRATEGY_DRIFT_TERMS)
+    if drift_detected and not any(term in profile_text for term in GENERIC_STRATEGY_DRIFT_TERMS):
+        return True
+    # Reject IT drift when profile clearly indicates non-IT business (solar, HVAC, legal, etc.)
+    profile_is_non_it = any(sig in profile_text for sig in NON_IT_PROFILE_SIGNALS)
+    has_it_drift = any(term in lowered for term in IT_DRIFT_TERMS)
+    if profile_is_non_it and has_it_drift:
+        return True
+    return False
 
 
 def _fallback_core_positioning(profile_payload: dict[str, Any], classification: list[str]) -> str:
     business_name = (profile_payload.get("business_name") or "").strip() or "This workspace"
+    description = (profile_payload.get("business_description") or "").strip()
     industries = normalize_string_list(profile_payload.get("industries_served"))
     specialties = normalize_string_list(profile_payload.get("service_specialties"))
     service_area = (profile_payload.get("service_area") or "").strip()
 
-    industries_text = ", ".join(industries[:3]) if industries else "local service-heavy businesses"
-    specialties_text = ", ".join(specialties[:3]) if specialties else "reliability-focused IT operations"
+    industries_text = ", ".join(industries[:3]) if industries else "local businesses"
+    if specialties:
+        specialties_text = ", ".join(specialties[:3])
+    elif description:
+        specialties_text = description[:80] + ("..." if len(description) > 80 else "")
+    else:
+        specialties_text = "profile-aligned services"
 
     area_suffix = f" in {service_area}" if service_area else ""
-    model_hint = " and ".join(classification[:2]) if classification else "profile-aligned service delivery"
+    model_hint = " and ".join(classification[:2]) if classification else "service delivery"
 
     return (
         f"{business_name} provides {specialties_text} for {industries_text}{area_suffix}, "
-        f"with outreach focused on practical operational reliability tied to {model_hint}."
+        f"with outreach focused on practical value tied to {model_hint}."
     )
 
 

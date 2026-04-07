@@ -39,6 +39,8 @@ export default function AutomationPage() {
   const [actionState, setActionState] = useState<Record<string, string | null>>({});
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [gmailConnectError, setGmailConnectError] = useState<string | null>(null);
+  const [connectingGmail, setConnectingGmail] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -129,11 +131,25 @@ export default function AutomationPage() {
   async function onConnectGmail(): Promise<void> {
     setError(null);
     setMessage(null);
+    setGmailConnectError(null);
+    setConnectingGmail(true);
     try {
       const payload = await getGmailConnectUrl();
-      window.location.assign(payload.connect_url);
+      const raw = payload?.connect_url;
+      const url = typeof raw === "string" ? raw.trim() : "";
+      if (!url || !/^https?:\/\//i.test(url)) {
+        setGmailConnectError(
+          "Backend did not return a valid Gmail URL. Add Google OAuth Client ID and secret under Settings → Integrations, or set GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET on the server and restart."
+        );
+        setConnectingGmail(false);
+        return;
+      }
+      window.location.href = url;
     } catch (connectError) {
-      setError(getErrorMessage(connectError));
+      const msg = getErrorMessage(connectError);
+      setGmailConnectError(msg);
+      setError(msg);
+      setConnectingGmail(false);
     }
   }
 
@@ -311,11 +327,23 @@ export default function AutomationPage() {
           </div>
         </div>
         {gmailStatus?.last_error ? <div className="error">{gmailStatus.last_error}</div> : null}
+        {gmailConnectError ? <div className="error">{gmailConnectError}</div> : null}
         <div className="inline-actions">
-          <button type="button" className="btn-primary" onClick={() => void onConnectGmail()}>
-            {gmailStatus?.connected ? "Reconnect Gmail" : "Connect Gmail"}
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={connectingGmail}
+            onClick={() => void onConnectGmail()}
+          >
+            {connectingGmail ? "Opening Google…" : gmailStatus?.connected ? "Reconnect Gmail" : "Connect Gmail"}
           </button>
         </div>
+        <p className="muted" style={{ marginTop: 8, fontSize: "0.85rem" }}>
+          Save Google OAuth Client ID and secret under{" "}
+          <a href="/settings">Settings → Integrations</a>
+          {" "}(or configure env vars on the server). If connect fails, check the message above or the network request to{" "}
+          <code>/api/v1/integrations/gmail/connect-url</code>.
+        </p>
       </section>
 
       <section className="card stack">

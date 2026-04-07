@@ -119,6 +119,13 @@ export function getLeads(limit: number, offset: number, status?: string, q?: str
   return apiFetch<LeadListResponse>(`/api/v1/leads?${query}`);
 }
 
+export function deleteLeadsBulk(leadIds: string[]): Promise<{ deleted_count: number }> {
+  return apiFetch<{ deleted_count: number }>("/api/v1/leads/bulk-delete", {
+    method: "POST",
+    body: JSON.stringify({ lead_ids: leadIds })
+  });
+}
+
 export function createLead(payload: CreateLeadPayload): Promise<Lead> {
   return apiFetch<Lead>("/api/v1/leads", {
     method: "POST",
@@ -179,10 +186,27 @@ export function runProspectSearch(payload: ProspectSearchPayload): Promise<Prosp
   });
 }
 
+export interface LocationSuggestionsApiResponse {
+  suggestions: Array<{ description: string; place_id: string }>;
+}
+
+export function getProspectLocationSuggestions(q: string): Promise<LocationSuggestionsApiResponse> {
+  const params = new URLSearchParams();
+  params.set("q", q);
+  return apiFetch<LocationSuggestionsApiResponse>(`/api/v1/prospects/location-suggestions?${params.toString()}`);
+}
+
 export function convertProspectsToLeads(payload: ConvertProspectsPayload): Promise<ConvertProspectsResponse> {
   return apiFetch<ConvertProspectsResponse>("/api/v1/prospects/convert-to-leads", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export function deleteProspectsBulk(prospectIds: string[]): Promise<{ deleted_count: number }> {
+  return apiFetch<{ deleted_count: number }>("/api/v1/prospects/bulk-delete", {
+    method: "POST",
+    body: JSON.stringify({ prospect_ids: prospectIds })
   });
 }
 
@@ -320,6 +344,25 @@ export function sendDraft(draftId: string): Promise<GmailSendResponse> {
 
 export function devLogin(payload: DevLoginPayload): Promise<DevLoginResult> {
   return apiFetch<DevLoginResult>("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    requireIdentity: false
+  });
+}
+
+export interface WorkspaceCreatePayload {
+  name: string;
+}
+
+export interface WorkspaceRead {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function createWorkspace(payload: WorkspaceCreatePayload): Promise<WorkspaceRead> {
+  return apiFetch<WorkspaceRead>("/api/v1/workspaces", {
     method: "POST",
     body: JSON.stringify(payload),
     requireIdentity: false

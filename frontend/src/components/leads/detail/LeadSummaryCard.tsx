@@ -6,110 +6,104 @@ interface LeadSummaryCardProps {
   loading: boolean;
 }
 
-function statusClass(status?: string): string {
-  switch ((status ?? "").toLowerCase()) {
-    case "approved":
-    case "sent":
-    case "replied":
-    case "converted":
-      return "status-badge status-send";
-    case "needs_review":
-    case "archived":
-      return "status-badge status-hold";
-    case "drafting":
-    case "draft_ready":
-      return "status-badge status-draft";
-    case "researching":
-    case "researched":
-      return "status-badge status-research";
-    default:
-      return "status-badge status-new";
-  }
-}
-
 function toLocalDate(value?: string): string {
-  if (!value) {
-    return "-";
-  }
+  if (!value) return "-";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function initials(name?: string | null, company?: string | null): string {
+  const n = (name || "").trim();
+  const c = (company || "").trim();
+  if (n) {
+    const parts = n.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    return n.slice(0, 2).toUpperCase();
+  }
+  if (c) return c.slice(0, 2).toUpperCase();
+  return "??";
 }
 
 export function LeadSummaryCard({ lead, loading }: LeadSummaryCardProps) {
   const stage = lead ? resolveLeadPipeline(lead).computed_stage : "imported";
 
   return (
-    <section className="card stack">
-      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-        <h2>Lead Profile</h2>
-        <div className="inline-actions">
-          {lead ? <span className={statusClass(stage)}>{stageLabel(stage)}</span> : null}
-          <button type="button" className="btn-danger" disabled title="Delete flow coming soon">
-            Delete Lead
-          </button>
-        </div>
-      </div>
+    <section className="card lead-profile-card">
       {loading ? (
-        <div className="muted">Loading lead...</div>
-      ) : lead ? (
-        <div className="kv-grid">
-          <div className="kv">
-            <strong>Name</strong>
-            {lead.name || "-"}
-          </div>
-          <div className="kv">
-            <strong>Company</strong>
-            {lead.company || "-"}
-          </div>
-          <div className="kv">
-            <strong>Current Stage</strong>
-            {stageLabel(stage)}
-          </div>
-          <div className="kv">
-            <strong>Website</strong>
-            {lead.website_url ? (
-              <a className="external-link" href={lead.website_url} target="_blank" rel="noreferrer">
-                {lead.website_url}
-              </a>
-            ) : (
-              "-"
-            )}
-          </div>
-          <div className="kv">
-            <strong>Email</strong>
-            {lead.email || "-"}
-          </div>
-          <div className="kv">
-            <strong>Phone</strong>
-            {lead.phone || "-"}
-          </div>
-          <div className="kv">
-            <strong>Industry</strong>
-            {lead.industry || "-"}
-          </div>
-          <div className="kv">
-            <strong>Location</strong>
-            {lead.location || "-"}
-          </div>
-          <div className="kv">
-            <strong>Source</strong>
-            {lead.source || "-"}
-          </div>
-          <div className="kv">
-            <strong>Lead ID</strong>
-            {lead.id}
-          </div>
-          <div className="kv">
-            <strong>Created</strong>
-            {toLocalDate(lead.created_at)}
-          </div>
-          <div className="kv">
-            <strong>Updated</strong>
-            {toLocalDate(lead.updated_at)}
+        <div className="lead-profile-header lead-profile-skeleton">
+          <div className="lead-profile-avatar" aria-hidden />
+          <div className="lead-profile-info">
+            <div className="lead-profile-name">Loading...</div>
+            <div className="lead-profile-company">—</div>
+            <div className="lead-profile-meta">—</div>
           </div>
         </div>
+      ) : lead ? (
+        <>
+          <div className="lead-profile-header">
+            <div className="lead-profile-avatar" aria-hidden>
+              {initials(lead.name, lead.company)}
+            </div>
+            <div className="lead-profile-info">
+              <h2 className="lead-profile-name">{lead.name || "—"}</h2>
+              <div className="lead-profile-company">{lead.company || "—"}</div>
+              <div className="lead-profile-meta">
+                {lead.industry && <span>{lead.industry}</span>}
+                {lead.location && <span> · {lead.location}</span>}
+                {lead.source && <span> · {lead.source}</span>}
+              </div>
+            </div>
+            <div className="lead-profile-stage">
+              <span className="lead-profile-stage-label">Stage</span>
+              <span className="lead-profile-stage-value">{stageLabel(stage)}</span>
+            </div>
+          </div>
+          <div className="lead-profile-details">
+            <div className="lead-profile-section">
+              <h3 className="lead-profile-section-title">Contact</h3>
+              <div className="lead-profile-fields">
+                {lead.website_url && (
+                  <div className="lead-profile-field">
+                    <span className="lead-profile-field-label">Website</span>
+                    <a className="external-link" href={lead.website_url} target="_blank" rel="noreferrer">
+                      {lead.website_url}
+                    </a>
+                  </div>
+                )}
+                {lead.email && (
+                  <div className="lead-profile-field">
+                    <span className="lead-profile-field-label">Email</span>
+                    <a href={`mailto:${lead.email}`}>{lead.email}</a>
+                  </div>
+                )}
+                {lead.phone && (
+                  <div className="lead-profile-field">
+                    <span className="lead-profile-field-label">Phone</span>
+                    <a href={`tel:${lead.phone}`}>{lead.phone}</a>
+                  </div>
+                )}
+                {!lead.website_url && !lead.email && !lead.phone && (
+                  <span className="muted">No contact info</span>
+                )}
+              </div>
+            </div>
+            <div className="lead-profile-section">
+              <h3 className="lead-profile-section-title">Details</h3>
+              <div className="lead-profile-fields">
+                <div className="lead-profile-field">
+                  <span className="lead-profile-field-label">Source</span>
+                  <span>{lead.source || "—"}</span>
+                </div>
+                <div className="lead-profile-field">
+                  <span className="lead-profile-field-label">Created</span>
+                  <span>{toLocalDate(lead.created_at)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
       ) : (
-        <div className="muted">Lead not found.</div>
+        <div className="muted" style={{ padding: 24 }}>Lead not found.</div>
       )}
     </section>
   );

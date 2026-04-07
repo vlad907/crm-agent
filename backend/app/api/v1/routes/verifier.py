@@ -21,6 +21,7 @@ from app.services.agent3_verifier import (
     Agent3VerifierError,
     verify_email_with_agent3,
 )
+from app.services.agent_outreach_mode import compute_agent2_outreach_mode, ensure_agent1_canonical_fields
 from app.services.workspace_credentials import resolve_openai_api_key
 from app.services.workspace_ai_strategy import build_strategy_context
 
@@ -113,7 +114,13 @@ def run_agent3_for_lead(
     )
 
     logger.info("Agent3 run start lead_id=%s draft_id=%s", lead_id, latest_draft.id)
-    strategy_context = build_strategy_context(db.get(WorkspaceAIStrategy, ctx.workspace_id))
+    strategy_context = build_strategy_context(
+        db.get(WorkspaceAIStrategy, ctx.workspace_id),
+        lead_category=lead.industry,
+    )
+    agent1_canon = ensure_agent1_canonical_fields(latest_agent1_draft.agent1_output or {})
+    outreach_mode = compute_agent2_outreach_mode(agent1_canon, strategy_context)
+    strategy_context = {**strategy_context, "agent2_outreach_mode": outreach_mode}
     try:
         verdict = verify_email_with_agent3(
             lead_name=lead.name,

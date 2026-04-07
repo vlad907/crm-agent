@@ -59,7 +59,7 @@ def get_gmail_connect_url(
 ) -> GmailConnectUrlResponse:
     _require_workspace_exists(db, ctx.workspace_id)
     try:
-        url = build_gmail_connect_url(workspace_id=ctx.workspace_id, user_id=ctx.user_id)
+        url = build_gmail_connect_url(db=db, workspace_id=ctx.workspace_id, user_id=ctx.user_id)
     except GmailConfigurationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return GmailConnectUrlResponse(connect_url=url)
@@ -119,7 +119,7 @@ def gmail_oauth_callback(
         if parsed_state is None:
             parsed_state = decode_oauth_state(state)
         _require_workspace_exists(db, parsed_state.workspace_id)
-        token_payload = exchange_code_for_tokens(code=code)
+        token_payload = exchange_code_for_tokens(db=db, workspace_id=parsed_state.workspace_id, code=code)
         save_oauth_tokens(db, workspace_id=parsed_state.workspace_id, token_payload=token_payload)
         access_token = str(token_payload.get("access_token") or "").strip()
         account = attach_gmail_profile(db, workspace_id=parsed_state.workspace_id, access_token=access_token)

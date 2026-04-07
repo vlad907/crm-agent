@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 
 
 class GmailConnectUrlResponse(BaseModel):
-    connect_url: HttpUrl
+    """Plain string so JSON always includes a navigable URL for the browser."""
+    connect_url: str
 
 
 class GmailCallbackResponse(BaseModel):

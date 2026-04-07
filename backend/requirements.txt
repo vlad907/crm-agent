@@ -8,3 +8,5 @@ email-validator
 alembic
 httpx
 beautifulsoup4
+passlib[bcrypt]
+bcrypt<5.0.0

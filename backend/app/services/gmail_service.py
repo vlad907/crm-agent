@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.integration_account import IntegrationAccount
 from app.models.oauth_token import OAuthToken
+from app.models.workspace_setting import WorkspaceSetting
 
 GMAIL_PROVIDER = "gmail"
 GOOGLE_OAUTH_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -118,14 +119,28 @@ def decode_oauth_state(raw_state: str) -> GmailOAuthState:
     return GmailOAuthState(workspace_id=workspace_id, user_id=user_id, issued_at=issued_at)
 
 
-def _require_oauth_configuration() -> tuple[str, str, str]:
-    client_id = (settings.google_oauth_client_id or "").strip()
-    client_secret = (settings.google_oauth_client_secret or "").strip()
-    redirect_uri = (settings.gmail_oauth_redirect_uri or "").strip()
+def resolve_gmail_oauth_config(db: Session, workspace_id: UUID) -> tuple[str, str, str]:
+    """
+    OAuth app credentials: workspace_settings override, else server environment.
+    """
+    ws = db.get(WorkspaceSetting, workspace_id)
+    client_id = (ws.google_oauth_client_id or "").strip() if ws else ""
+    client_secret = (ws.google_oauth_client_secret or "").strip() if ws else ""
+    redirect_uri = (ws.gmail_oauth_redirect_uri or "").strip() if ws else ""
     if not client_id:
-        raise GmailConfigurationError("GOOGLE_OAUTH_CLIENT_ID is missing.")
+        client_id = (settings.google_oauth_client_id or "").strip()
     if not client_secret:
-        raise GmailConfigurationError("GOOGLE_OAUTH_CLIENT_SECRET is missing.")
+        client_secret = (settings.google_oauth_client_secret or "").strip()
+    if not redirect_uri:
+        redirect_uri = (settings.gmail_oauth_redirect_uri or "").strip()
+    if not client_id:
+        raise GmailConfigurationError(
+            "GOOGLE_OAUTH_CLIENT_ID is missing. Add it under Settings → Integrations or set GOOGLE_OAUTH_CLIENT_ID on the server."
+        )
+    if not client_secret:
+        raise GmailConfigurationError(
+            "GOOGLE_OAUTH_CLIENT_SECRET is missing. Add it under Settings → Integrations or set GOOGLE_OAUTH_CLIENT_SECRET on the server."
+        )
     if not redirect_uri:
         raise GmailConfigurationError("GMAIL_OAUTH_REDIRECT_URI is missing.")
     return client_id, client_secret, redirect_uri
@@ -142,8 +157,8 @@ def _scopes_list() -> list[str]:
     return [part.strip() for part in raw.split() if part.strip()]
 
 
-def build_gmail_connect_url(*, workspace_id: UUID, user_id: UUID) -> str:
-    client_id, _, redirect_uri = _require_oauth_configuration()
+def build_gmail_connect_url(*, db: Session, workspace_id: UUID, user_id: UUID) -> str:
+    client_id, _, redirect_uri = resolve_gmail_oauth_config(db, workspace_id)
     state = encode_oauth_state(workspace_id=workspace_id, user_id=user_id)
     params = {
         "client_id": client_id,
@@ -157,8 +172,8 @@ def build_gmail_connect_url(*, workspace_id: UUID, user_id: UUID) -> str:
     return f"{GOOGLE_OAUTH_AUTHORIZE_URL}?{urlencode(params)}"
 
 
-def exchange_code_for_tokens(*, code: str) -> dict[str, Any]:
-    client_id, client_secret, redirect_uri = _require_oauth_configuration()
+def exchange_code_for_tokens(*, db: Session, workspace_id: UUID, code: str) -> dict[str, Any]:
+    client_id, client_secret, redirect_uri = resolve_gmail_oauth_config(db, workspace_id)
     payload = {
         "code": code,
         "client_id": client_id,
@@ -268,7 +283,7 @@ def save_oauth_tokens(db: Session, *, workspace_id: UUID, token_payload: dict[st
 
 
 def _refresh_access_token(db: Session, *, account: IntegrationAccount, refresh_token: str) -> OAuthToken:
-    client_id, client_secret, _ = _require_oauth_configuration()
+    client_id, client_secret, _ = resolve_gmail_oauth_config(db, account.workspace_id)
     payload = {
         "client_id": client_id,
         "client_secret": client_secret,
@@ -366,7 +381,7 @@ def attach_gmail_profile(
 def get_gmail_connection_status(db: Session, *, workspace_id: UUID) -> GmailConnectionStatus:
     config_error: str | None = None
     try:
-        _require_oauth_configuration()
+        resolve_gmail_oauth_config(db, workspace_id)
     except GmailConfigurationError as exc:
         config_error = str(exc)
 

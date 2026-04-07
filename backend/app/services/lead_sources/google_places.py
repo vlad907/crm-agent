@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
-
 import httpx
 
 logger = logging.getLogger(__name__)
 
 NEARBY_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
 PLACE_DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json"
+GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
+AUTOCOMPLETE_URL = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
+
+_LAT_LNG_PATTERN = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
 NEXT_PAGE_TOKEN_DELAY_SECONDS = 2.0
 
 
@@ -51,6 +55,71 @@ class GooglePlacesCrawler:
 
         error_message = payload.get("error_message") or "Google Places request failed"
         raise GooglePlacesCrawlerError(f"{status}: {error_message}")
+
+    @staticmethod
+    def _format_lat_lng(lat: float, lng: float) -> str:
+        return f"{lat:.7f},{lng:.7f}"
+
+    def resolve_location_for_nearby_search(self, location: str) -> str:
+        """
+        Nearby Search requires \"lat,lng\". Accepts that format or geocodes a free-text address.
+        """
+        raw = (location or "").strip()
+        if not raw:
+            raise GooglePlacesCrawlerError("Location is empty.")
+
+        match = _LAT_LNG_PATTERN.match(raw)
+        if match:
+            lat_s, lng_s = match.group(1), match.group(2)
+            return f"{float(lat_s):.7f},{float(lng_s):.7f}"
+
+        params = {"key": self.api_key, "address": raw}
+        payload = self._request_json(GEOCODE_URL, params)
+        results = payload.get("results")
+        if not isinstance(results, list) or not results:
+            raise GooglePlacesCrawlerError(f"No geocoding results for: {raw!r}")
+
+        first = results[0]
+        if not isinstance(first, dict):
+            raise GooglePlacesCrawlerError("Geocoding response was invalid.")
+
+        geometry = first.get("geometry")
+        if not isinstance(geometry, dict):
+            raise GooglePlacesCrawlerError("Geocoding result missing geometry.")
+
+        loc = geometry.get("location")
+        if not isinstance(loc, dict):
+            raise GooglePlacesCrawlerError("Geocoding result missing coordinates.")
+
+        lat = loc.get("lat")
+        lng = loc.get("lng")
+        if not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)):
+            raise GooglePlacesCrawlerError("Geocoding returned invalid lat/lng.")
+
+        formatted = self._format_lat_lng(float(lat), float(lng))
+        logger.info("Geocoded %r -> %s", raw, formatted)
+        return formatted
+
+    def place_autocomplete(self, *, input_text: str, max_results: int = 8) -> list[dict[str, str]]:
+        """Returns Place Autocomplete predictions (description + place_id)."""
+        raw = (input_text or "").strip()
+        if len(raw) < 2:
+            return []
+
+        payload = self._request_json(AUTOCOMPLETE_URL, {"input": raw, "key": self.api_key})
+        predictions = payload.get("predictions")
+        if not isinstance(predictions, list):
+            return []
+
+        out: list[dict[str, str]] = []
+        for item in predictions[:max_results]:
+            if not isinstance(item, dict):
+                continue
+            desc = item.get("description")
+            pid = item.get("place_id")
+            if isinstance(desc, str) and desc.strip() and isinstance(pid, str) and pid.strip():
+                out.append({"description": desc.strip(), "place_id": pid.strip()})
+        return out
 
     def get_places(self, *, location: str, radius: int, business_type: str, keyword: str = "business") -> list[str]:
         params: dict[str, Any] = {
@@ -129,12 +198,13 @@ class GooglePlacesCrawler:
         keyword: str = "business",
         missing_website_only: bool = False,
     ) -> list[GooglePlaceLead]:
+        resolved = self.resolve_location_for_nearby_search(location)
         seen_place_ids: set[str] = set()
         businesses: list[GooglePlaceLead] = []
 
         for business_type in business_types:
             place_ids = self.get_places(
-                location=location,
+                location=resolved,
                 radius=radius,
                 business_type=business_type,
                 keyword=keyword,

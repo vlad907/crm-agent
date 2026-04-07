@@ -7,7 +7,10 @@ from pydantic import BaseModel, Field
 
 class DevLoginRequest(BaseModel):
     email: str = Field(min_length=1, max_length=255)
+    username: str | None = Field(default=None, max_length=255)
     name: str | None = Field(default=None, max_length=255)
+    password: str | None = Field(default=None, max_length=255)
+    workspace_id: str | None = Field(default=None, description="Optional. Use existing workspace or create new one.")
 
 
 class DevLoginResponse(BaseModel):

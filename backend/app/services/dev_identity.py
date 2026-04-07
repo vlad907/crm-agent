@@ -92,9 +92,9 @@ def resolve_request_identity(
     return workspace_id, user_id
 
 
-def _is_email_taken(email: str, db_user_id: uuid.UUID | None = None) -> bool:
+def _is_email_taken(email: str, workspace_id: uuid.UUID, db_user_id: uuid.UUID | None = None) -> bool:
     with SessionLocal() as db:
-        stmt = select(User).where(User.email == email)
+        stmt = select(User).where(User.workspace_id == workspace_id, User.email == email)
         existing = db.scalar(stmt)
         if existing is None:
             return False
@@ -103,10 +103,10 @@ def _is_email_taken(email: str, db_user_id: uuid.UUID | None = None) -> bool:
         return True
 
 
-def _build_available_dev_email(user_id: uuid.UUID | None = None) -> str:
-    if user_id and not _is_email_taken(DEFAULT_USER_EMAIL, db_user_id=user_id):
+def _build_available_dev_email(workspace_id: uuid.UUID, user_id: uuid.UUID | None = None) -> str:
+    if user_id and not _is_email_taken(DEFAULT_USER_EMAIL, workspace_id, db_user_id=user_id):
         return DEFAULT_USER_EMAIL
-    if not _is_email_taken(DEFAULT_USER_EMAIL):
+    if not _is_email_taken(DEFAULT_USER_EMAIL, workspace_id):
         return DEFAULT_USER_EMAIL
 
     suffix = user_id.hex[:8] if user_id else uuid.uuid4().hex[:8]
@@ -154,7 +154,7 @@ def initialize_default_identity_for_dev() -> tuple[uuid.UUID, uuid.UUID] | None:
                     user = User(
                         id=configured_user_id,
                         workspace_id=workspace.id,
-                        email=_build_available_dev_email(configured_user_id),
+                        email=_build_available_dev_email(workspace.id, configured_user_id),
                         name=DEFAULT_USER_NAME,
                         role="owner",
                     )
@@ -171,7 +171,7 @@ def initialize_default_identity_for_dev() -> tuple[uuid.UUID, uuid.UUID] | None:
                 if user is None:
                     user = User(
                         workspace_id=workspace.id,
-                        email=_build_available_dev_email(),
+                        email=_build_available_dev_email(workspace.id),
                         name=DEFAULT_USER_NAME,
                         role="owner",
                     )

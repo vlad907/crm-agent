@@ -53,3 +53,12 @@ export function setWorkspaceId(id: string): void {
 export function setUserId(id: string): void {
   setLocalStorageValue(USER_STORAGE_KEY, id);
 }
+
+export function clearIdentity(): void {
+  setLocalStorageValue(WORKSPACE_STORAGE_KEY, "");
+  setLocalStorageValue(USER_STORAGE_KEY, "");
+}
+
+export function hasIdentity(): boolean {
+  return !!(getWorkspaceId() && getUserId());
+}

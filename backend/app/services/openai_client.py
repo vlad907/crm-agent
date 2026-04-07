@@ -8,6 +8,12 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
+from app.services.agent_outreach_mode import (
+    attach_agent1_legacy_aliases,
+    build_agent2_mode_instructions,
+    compute_agent2_outreach_mode,
+    ensure_agent1_canonical_fields,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +23,13 @@ REQUEST_TIMEOUT = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
 AGENT1_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["website_summary", "rapport_hooks", "pain_points", "recommended_angle"],
+    "required": [
+        "website_summary",
+        "pain_points_detected",
+        "signals_found",
+        "recommended_angle",
+        "confidence_score",
+    ],
     "properties": {
         "website_summary": {
             "type": "object",
@@ -28,20 +40,7 @@ AGENT1_SCHEMA: dict[str, Any] = {
                 "services_offered": {"type": "array", "items": {"type": "string"}},
             },
         },
-        "rapport_hooks": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["type", "hook", "evidence_quote"],
-                "properties": {
-                    "type": {"type": "string"},
-                    "hook": {"type": "string"},
-                    "evidence_quote": {"type": "string"},
-                },
-            },
-        },
-        "pain_points": {
+        "pain_points_detected": {
             "type": "array",
             "items": {
                 "type": "object",
@@ -50,6 +49,19 @@ AGENT1_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "pain": {"type": "string"},
                     "severity": {"type": "string"},
+                    "evidence_quote": {"type": "string"},
+                },
+            },
+        },
+        "signals_found": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["type", "signal", "evidence_quote"],
+                "properties": {
+                    "type": {"type": "string"},
+                    "signal": {"type": "string"},
                     "evidence_quote": {"type": "string"},
                 },
             },
@@ -63,6 +75,7 @@ AGENT1_SCHEMA: dict[str, Any] = {
                 "cta": {"type": "string"},
             },
         },
+        "confidence_score": {"type": "number", "minimum": 0, "maximum": 1},
     },
 }
 
@@ -77,88 +90,53 @@ AGENT2_SCHEMA: dict[str, Any] = {
     },
 }
 
-SYSTEM_PROMPT = """You are Agent 1 in an outbound outreach system for an IT services business.
+SYSTEM_PROMPT = """You are Agent 1 in an outbound outreach system (often IT / commercial services).
 
-Your job is to analyze website text and extract factual signals that could justify IT-related outreach.
-
-Return ONLY structured JSON matching the required schema.
-Do not include explanations or extra text.
+Analyze ONLY the provided website text. Return ONLY JSON matching the schema — no markdown, no prose.
 
 ----------------------
-OBJECTIVE
+OUTPUT FIELDS
 ----------------------
 
-1) Summarize what the business does.
-2) Identify operational or technology-related signals that could indicate IT needs.
-3) Extract conservative, evidence-backed pain points relevant to IT services.
+1) website_summary — one_liner + services_offered (factual).
 
-----------------------
-CATEGORIES TO EXTRACT
-----------------------
+2) signals_found — array of {type, signal, evidence_quote}:
+   - Technology/ops cues visible on the site: Wi‑Fi, POS, online ordering, reservations, ecommerce, events, multiple locations, etc.
+   - type: short label e.g. "technology" or "operational".
+   - signal: one-line description of what you observed.
+   - evidence_quote: VERBATIM snippet from the website text (must appear in the input).
 
-1) business_summary
-   - one_liner: Neutral factual summary of what the business does.
+3) pain_points_detected — array of {pain, severity, evidence_quote}:
+   - ONLY issues clearly supported by the website (explicit or directly quoted frustration, downtime, peak demand, reliability, etc.).
+   - severity: "low" | "medium" | "high".
+   - If nothing is clearly evidenced, return [].
 
-2) technology_signals
-   - Explicit references to:
-     - Wi-Fi
-     - POS systems
-     - online ordering
-     - e-commerce
-     - booking systems
-     - digital menus
-     - subscriptions
-     - multiple locations
-     - network usage
-     - customer portals
-     - software systems
-   - Each must include:
-     - signal
-     - evidence_quote (verbatim)
+4) confidence_score — float 0.0–1.0:
+   - How strong the combined evidence is for outreach (more concrete quotes + clearer signals → higher).
+   - Use 0.0–0.4 when signals are thin or generic; 0.5+ only when pain_points_detected has solid quotes OR multiple strong signals.
 
-3) operational_signals
-   - Signals that imply scaling, growth, or infrastructure load.
-   - Examples:
-     - expansion
-     - new locations
-     - online store
-     - high customer traffic
-     - subscriptions
-     - events
-   - Each must include:
-     - signal
-     - evidence_quote
-
-4) it_relevant_pain_points
-   - ONLY explicit friction related to:
-     - connectivity
-     - reliability
-     - high demand
-     - scaling challenges
-     - customer experience issues tied to tech
-   - Each must include:
-     - pain
-     - severity ("low" | "medium" | "high")
-     - evidence_quote
+5) recommended_angle — primary_offer + cta (conservative, for internal handoff).
 
 ----------------------
 STRICT RULES
 ----------------------
 
-- Do NOT invent hidden IT problems.
-- Do NOT assume internal systems.
-- Do NOT speculate about cybersecurity, compliance, or infrastructure unless explicitly mentioned.
-- All evidence_quote fields must be exact snippets from the text.
-- If no IT-relevant pain is explicitly stated, return an empty array.
-- Keep everything conservative and factual.
-- Do not include sales language.
-- Do not include strategic recommendations.
+- Do NOT invent problems, stack, or internal issues not in the text.
+- Do NOT fill pain_points_detected from guesses. Empty array is correct when unclear.
+- All evidence_quote values must be copied from the website text (short excerpts ok).
+- No sales language in Agent 1 output.
 
 Return valid JSON only."""
 
-AGENT2_SYSTEM_PROMPT = """You are Agent 2.
-Write one concise outbound email draft using provided lead context.
-Use a professional tone, stay factual, and do not invent claims.
+AGENT2_SYSTEM_PROMPT = """You are Agent 2. Write one concise outbound email (JSON: subject, email_body, used_signal).
+
+SERVICE + CTA:
+- Name what WE offer using core_positioning (solar vs IT vs other — match the business).
+- Use the exact CTA label from strategy when provided. Do not swap unrelated CTAs (e.g. network assessment vs site assessment).
+- Avoid filler: "enhance operations," "support your goals," "explore opportunities."
+
+The user message gives MODE: SIGNAL, FALLBACK, or SOFT. Obey MODE rules before anything else.
+
 Return JSON only matching the required schema."""
 
 
@@ -230,6 +208,7 @@ def run_agent1(raw_text: str, *, api_key: str | None = None) -> dict[str, Any]:
                 raise OpenAIClientError(f"OpenAI returned invalid JSON payload: {exc}") from exc
 
             _validate_agent1_output(parsed)
+            parsed = attach_agent1_legacy_aliases(parsed)
             logger.info("Agent1 OpenAI request end")
             return parsed
 
@@ -332,6 +311,15 @@ def _build_payload(raw_text: str) -> dict[str, Any]:
     }
 
 
+def augment_agent1_with_strategy_fallbacks(
+    agent1_output: dict[str, Any],
+    strategy_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Deprecated: strategy fallbacks are applied in Agent 2 (fallback mode), not merged into Agent 1."""
+    _ = strategy_context
+    return dict(agent1_output)
+
+
 def _build_agent2_payload(
     *,
     lead_name: str,
@@ -341,19 +329,47 @@ def _build_agent2_payload(
     agent1_output: dict[str, Any],
     strategy_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    strategy = dict(strategy_context or {})
+    agent1_canon = ensure_agent1_canonical_fields(agent1_output)
+    outreach_mode = compute_agent2_outreach_mode(agent1_canon, strategy)
+    matched = strategy.get("matched_category") or strategy.get("matched_workspace_category")
+    strategy["matched_category"] = matched
+    strategy["agent2_outreach_mode"] = outreach_mode
+
     context = {
         "lead_name": lead_name,
         "company": company,
         "website_url": website_url,
-        "agent1_output": agent1_output,
-        "strategy_context": strategy_context or {},
+        "agent1_output": agent1_canon,
+        "strategy_context": strategy,
+        "agent2_outreach_mode": outreach_mode,
+        "matched_category": matched,
     }
+
+    mode_instructions = build_agent2_mode_instructions(outreach_mode, agent1_canon, strategy)
+    core_pos = strategy.get("core_positioning") or ""
+    cta_detail = strategy.get("selected_cta_recommendation")
+    if not cta_detail:
+        gen = strategy.get("generated_strategy") or {}
+        ctas = gen.get("cta_recommendations") if isinstance(gen, dict) else []
+        cta_detail = ctas[0] if isinstance(ctas, list) and ctas else {}
+    cta_label = cta_detail.get("label", "") if isinstance(cta_detail, dict) else ""
+    service_angles = strategy.get("fallback_service_angles_for_category") or []
+    service_angles_text = ", ".join(service_angles[:5]) if isinstance(service_angles, list) else ""
+
     strategy_instructions = (
         "Strategy rules:\n"
-        "- If selected_service_angle_details or selected_priority_pain_point_details are provided, anchor the draft to them only.\n"
-        "- Do not introduce pain points or service angles outside selected strategy items.\n"
-        "- If no selected strategy items exist, use a safer, simple outreach pattern with one modest CTA and no strong claims.\n"
-        "- used_signal should cite either a selected pain/angle key or a clear factual signal from agent1_output.\n"
+        "- If strategy_available is true, use core_positioning, ideal_customers, rapport_points, guardrails, preferred_tone, outreach_style.\n"
+        f"- core_positioning (what we offer): {core_pos or '(use generated_strategy.core_positioning)'}\n"
+    )
+    if cta_label:
+        strategy_instructions += f"- Use this CTA: {cta_label}\n"
+    if service_angles_text:
+        strategy_instructions += f"- Service angles for this lead category: {service_angles_text}\n"
+    strategy_instructions += (
+        "- Do NOT be vague about what we sell. Name the service and use the specific CTA.\n"
+        f"{mode_instructions}\n"
+        "- used_signal: briefly cite which evidence or angle you used (signal quote key, fallback topic, or website fact).\n"
     )
     return {
         "model": settings.openai_model,
@@ -466,7 +482,11 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
 
 
 def _validate_agent1_output(data: dict[str, Any]) -> None:
-    _require_keys(data, ["website_summary", "rapport_hooks", "pain_points", "recommended_angle"], "root")
+    _require_keys(
+        data,
+        ["website_summary", "pain_points_detected", "signals_found", "recommended_angle", "confidence_score"],
+        "root",
+    )
 
     website_summary = _require_dict(data["website_summary"], "website_summary")
     _require_keys(website_summary, ["one_liner", "services_offered"], "website_summary")
@@ -477,25 +497,31 @@ def _validate_agent1_output(data: dict[str, Any]) -> None:
     for index, service in enumerate(services_offered):
         _require_string(service, f"website_summary.services_offered[{index}]")
 
-    rapport_hooks = data["rapport_hooks"]
-    if not isinstance(rapport_hooks, list):
-        raise OpenAIOutputValidationError("rapport_hooks must be a list")
-    for index, hook_item in enumerate(rapport_hooks):
-        hook_obj = _require_dict(hook_item, f"rapport_hooks[{index}]")
-        _require_keys(hook_obj, ["type", "hook", "evidence_quote"], f"rapport_hooks[{index}]")
-        _require_string(hook_obj["type"], f"rapport_hooks[{index}].type")
-        _require_string(hook_obj["hook"], f"rapport_hooks[{index}].hook")
-        _require_string(hook_obj["evidence_quote"], f"rapport_hooks[{index}].evidence_quote")
+    signals_found = data["signals_found"]
+    if not isinstance(signals_found, list):
+        raise OpenAIOutputValidationError("signals_found must be a list")
+    for index, sig_item in enumerate(signals_found):
+        sig_obj = _require_dict(sig_item, f"signals_found[{index}]")
+        _require_keys(sig_obj, ["type", "signal", "evidence_quote"], f"signals_found[{index}]")
+        _require_string(sig_obj["type"], f"signals_found[{index}].type")
+        _require_string(sig_obj["signal"], f"signals_found[{index}].signal")
+        _require_string(sig_obj["evidence_quote"], f"signals_found[{index}].evidence_quote")
 
-    pain_points = data["pain_points"]
-    if not isinstance(pain_points, list):
-        raise OpenAIOutputValidationError("pain_points must be a list")
-    for index, pain_item in enumerate(pain_points):
-        pain_obj = _require_dict(pain_item, f"pain_points[{index}]")
-        _require_keys(pain_obj, ["pain", "severity", "evidence_quote"], f"pain_points[{index}]")
-        _require_string(pain_obj["pain"], f"pain_points[{index}].pain")
-        _require_string(pain_obj["severity"], f"pain_points[{index}].severity")
-        _require_string(pain_obj["evidence_quote"], f"pain_points[{index}].evidence_quote")
+    pain_points_detected = data["pain_points_detected"]
+    if not isinstance(pain_points_detected, list):
+        raise OpenAIOutputValidationError("pain_points_detected must be a list")
+    for index, pain_item in enumerate(pain_points_detected):
+        pain_obj = _require_dict(pain_item, f"pain_points_detected[{index}]")
+        _require_keys(pain_obj, ["pain", "severity", "evidence_quote"], f"pain_points_detected[{index}]")
+        _require_string(pain_obj["pain"], f"pain_points_detected[{index}].pain")
+        _require_string(pain_obj["severity"], f"pain_points_detected[{index}].severity")
+        _require_string(pain_obj["evidence_quote"], f"pain_points_detected[{index}].evidence_quote")
+
+    cs = data["confidence_score"]
+    if not isinstance(cs, (int, float)):
+        raise OpenAIOutputValidationError("confidence_score must be a number")
+    if not (0.0 <= float(cs) <= 1.0):
+        raise OpenAIOutputValidationError("confidence_score must be between 0 and 1")
 
     recommended_angle = _require_dict(data["recommended_angle"], "recommended_angle")
     _require_keys(recommended_angle, ["primary_offer", "cta"], "recommended_angle")

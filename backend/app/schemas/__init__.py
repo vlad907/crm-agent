@@ -17,6 +17,8 @@ from app.schemas.lead import (
     LeadUpdate,
 )
 from app.schemas.prospect import (
+    LocationSuggestionItem,
+    LocationSuggestionsResponse,
     ProspectConvertRequest,
     ProspectConvertResponse,
     ProspectImportRequest,
@@ -67,6 +69,8 @@ __all__ = [
     "ProspectImportResponse",
     "ProspectRunSearchRequest",
     "ProspectRunSearchResponse",
+    "LocationSuggestionItem",
+    "LocationSuggestionsResponse",
     "ProspectConvertRequest",
     "ProspectConvertResponse",
     "WorkspaceSettingsRead",

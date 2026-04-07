@@ -135,7 +135,10 @@ export interface Agent3RunResult {
 
 export interface DevLoginPayload {
   email: string;
+  username?: string | null;
   name?: string | null;
+  password?: string | null;
+  workspace_id?: string | null;
 }
 
 export interface DevLoginResult {
@@ -307,6 +310,9 @@ export interface WorkspaceSettings {
   workspace_id: string;
   openai_api_key?: string | null;
   google_places_api_key?: string | null;
+  google_oauth_client_id?: string | null;
+  google_oauth_client_secret?: string | null;
+  gmail_oauth_redirect_uri?: string | null;
   gmail_connected?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
@@ -315,6 +321,9 @@ export interface WorkspaceSettings {
 export interface WorkspaceSettingsUpdate {
   openai_api_key?: string | null;
   google_places_api_key?: string | null;
+  google_oauth_client_id?: string | null;
+  google_oauth_client_secret?: string | null;
+  gmail_oauth_redirect_uri?: string | null;
   gmail_connected?: boolean | null;
 }
 
@@ -447,11 +456,10 @@ export interface StrategyPainPoint {
   why_relevant: string;
 }
 
-export interface StrategyServiceAngle {
-  key: string;
-  label: string;
-  best_for_categories: string[];
-  why_relevant?: string;
+export interface StrategyRapportPoint {
+  category: string;
+  display_name: string;
+  hooks: string[];
 }
 
 export interface StrategyCtaRecommendation {
@@ -468,9 +476,13 @@ export interface StrategyGuardrails {
 export interface WorkspaceGeneratedStrategy {
   business_model_classification?: string[];
   core_positioning: string;
+  target_categories?: string[];
   ideal_customers: StrategyIdealCustomer[];
   priority_pain_points: StrategyPainPoint[];
-  service_angles: StrategyServiceAngle[];
+  pain_points_by_category?: Record<string, StrategyPainPoint[]>;
+  service_angles_by_category?: Record<string, string[]>;
+  rapport_hooks_by_category?: Record<string, string[]>;
+  rapport_points?: StrategyRapportPoint[];
   cta_recommendations: StrategyCtaRecommendation[];
   guardrails: StrategyGuardrails;
 }

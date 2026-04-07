@@ -443,6 +443,7 @@ def convert_prospects_to_leads(
             website_url=website_url,
             source=prospect.source,
             status=DEFAULT_LEAD_STATUS,
+            industry=_clean_text(prospect.category),
         )
         converted_leads.append(lead)
         prospect.import_status = "imported"

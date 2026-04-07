@@ -50,7 +50,10 @@ def create_workspace_user(
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User with this email already exists") from exc
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User with this email already exists in this workspace",
+        ) from exc
 
     db.refresh(user)
     return user

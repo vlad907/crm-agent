@@ -24,6 +24,9 @@ class WorkspaceSetting(TimestampMixin, Base):
     )
     openai_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     google_places_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_oauth_client_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_oauth_client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
+    gmail_oauth_redirect_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     gmail_connected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="settings")

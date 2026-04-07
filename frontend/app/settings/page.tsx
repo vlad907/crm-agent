@@ -64,6 +64,9 @@ export default function SettingsPage() {
 
   const [openaiApiKey, setOpenaiApiKey] = useState("");
   const [googleApiKey, setGoogleApiKey] = useState("");
+  const [googleOAuthClientId, setGoogleOAuthClientId] = useState("");
+  const [googleOAuthClientSecret, setGoogleOAuthClientSecret] = useState("");
+  const [gmailOAuthRedirectUri, setGmailOAuthRedirectUri] = useState("");
 
   const [businessName, setBusinessName] = useState("");
   const [businessDescription, setBusinessDescription] = useState("");
@@ -77,7 +80,6 @@ export default function SettingsPage() {
   const [aiStrategy, setAiStrategy] = useState<WorkspaceAiStrategy | null>(null);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedPainPoints, setSelectedPainPoints] = useState<string[]>([]);
-  const [selectedServiceAngles, setSelectedServiceAngles] = useState<string[]>([]);
   const [selectedCtaStyle, setSelectedCtaStyle] = useState("");
 
   const [identityMessage, setIdentityMessage] = useState<string | null>(null);
@@ -95,7 +97,6 @@ export default function SettingsPage() {
     setAiStrategy(strategy);
     setSelectedCategories(strategy.selected_target_categories ?? []);
     setSelectedPainPoints(strategy.selected_priority_pain_points ?? []);
-    setSelectedServiceAngles(strategy.selected_service_angles ?? []);
     setSelectedCtaStyle(strategy.selected_cta_style ?? "");
   }
 
@@ -108,6 +109,9 @@ export default function SettingsPage() {
       .then(([settings, profile, strategy]) => {
         setOpenaiApiKey(settings.openai_api_key ?? "");
         setGoogleApiKey(settings.google_places_api_key ?? "");
+        setGoogleOAuthClientId(settings.google_oauth_client_id ?? "");
+        setGoogleOAuthClientSecret(settings.google_oauth_client_secret ?? "");
+        setGmailOAuthRedirectUri(settings.gmail_oauth_redirect_uri ?? "");
 
         setBusinessName(profile.business_name ?? "");
         setBusinessDescription(profile.business_description ?? "");
@@ -150,10 +154,16 @@ export default function SettingsPage() {
     try {
       const updated = await patchWorkspaceSettings({
         openai_api_key: openaiApiKey.trim() || null,
-        google_places_api_key: googleApiKey.trim() || null
+        google_places_api_key: googleApiKey.trim() || null,
+        google_oauth_client_id: googleOAuthClientId.trim() || null,
+        google_oauth_client_secret: googleOAuthClientSecret.trim() || null,
+        gmail_oauth_redirect_uri: gmailOAuthRedirectUri.trim() || null
       });
       setOpenaiApiKey(updated.openai_api_key ?? "");
       setGoogleApiKey(updated.google_places_api_key ?? "");
+      setGoogleOAuthClientId(updated.google_oauth_client_id ?? "");
+      setGoogleOAuthClientSecret(updated.google_oauth_client_secret ?? "");
+      setGmailOAuthRedirectUri(updated.gmail_oauth_redirect_uri ?? "");
       setSettingsMessage("Integration settings saved.");
     } catch (saveError) {
       setError(getErrorMessage(saveError));
@@ -180,7 +190,9 @@ export default function SettingsPage() {
       setIndustriesServed((updated.industries_served ?? []).join(", "));
       setServiceSpecialties((updated.service_specialties ?? []).join(", "));
       setServiceArea(updated.service_area ?? "");
-      setProfileMessage("General workspace profile saved.");
+      setProfileMessage(
+        "General workspace profile saved. Regenerate AI strategy (AI Configuration tab) to update target categories and pain points."
+      );
     } catch (saveError) {
       setError(getErrorMessage(saveError));
     } finally {
@@ -236,7 +248,6 @@ export default function SettingsPage() {
       const updated = await patchWorkspaceAiStrategy({
         selected_target_categories: selectedCategories,
         selected_priority_pain_points: selectedPainPoints,
-        selected_service_angles: selectedServiceAngles,
         selected_cta_style: selectedCtaStyle.trim() || null
       });
       applyAiStrategyState(updated);
@@ -251,7 +262,7 @@ export default function SettingsPage() {
   const strategyGenerated = aiStrategy?.generated_strategy;
   const strategyIdealCustomers = strategyGenerated?.ideal_customers ?? [];
   const strategyPainPoints = strategyGenerated?.priority_pain_points ?? [];
-  const strategyAngles = strategyGenerated?.service_angles ?? [];
+  const strategyRapportPoints = strategyGenerated?.rapport_points ?? [];
   const strategyCtas = strategyGenerated?.cta_recommendations ?? [];
   const strategyGuardrails = strategyGenerated?.guardrails;
   const strategyClassifications = strategyGenerated?.business_model_classification ?? [];
@@ -382,6 +393,44 @@ export default function SettingsPage() {
                 />
               </div>
             </div>
+            <h3 style={{ marginTop: "1rem", marginBottom: 0 }}>Gmail (Google OAuth)</h3>
+            <p className="muted" style={{ marginTop: 4, fontSize: "0.9rem" }}>
+              Web application client from Google Cloud Console. Authorized redirect URI must match the value below (or your server&apos;s{" "}
+              <code>GMAIL_OAUTH_REDIRECT_URI</code>).
+            </p>
+            <div className="field">
+              <label htmlFor="google_oauth_client_id">OAuth Client ID</label>
+              <input
+                id="google_oauth_client_id"
+                type="text"
+                autoComplete="off"
+                placeholder="xxx.apps.googleusercontent.com"
+                value={googleOAuthClientId}
+                onChange={(event) => setGoogleOAuthClientId(event.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="google_oauth_client_secret">OAuth Client Secret</label>
+              <input
+                id="google_oauth_client_secret"
+                type="password"
+                autoComplete="new-password"
+                placeholder="GOCSPX-..."
+                value={googleOAuthClientSecret}
+                onChange={(event) => setGoogleOAuthClientSecret(event.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="gmail_oauth_redirect_uri">OAuth redirect URI (optional)</label>
+              <input
+                id="gmail_oauth_redirect_uri"
+                type="url"
+                autoComplete="off"
+                placeholder="http://localhost:8000/api/v1/integrations/gmail/callback"
+                value={gmailOAuthRedirectUri}
+                onChange={(event) => setGmailOAuthRedirectUri(event.target.value)}
+              />
+            </div>
             {settingsMessage ? <div className="success">{settingsMessage}</div> : null}
             <div className="inline-actions">
               <button type="submit" className="btn-secondary" disabled={savingSettings || loading}>
@@ -449,7 +498,7 @@ export default function SettingsPage() {
                 </button>
               </div>
               <p className="muted">
-                Generate targeting suggestions, then choose which categories, pain points, and service angles Agent 2 should use.
+                Generate targeting suggestions, then choose which categories and pain points Agent 2 should use. Rapport points are common hooks Agent 2 will look for when building emails.
               </p>
 
               {!strategyGenerated ? (
@@ -522,22 +571,22 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="field">
-                    <label>Suggested Service Angles</label>
+                    <label>Common Rapport Points (by business type)</label>
+                    <p className="muted" style={{ marginTop: 4, marginBottom: 8 }}>
+                      Agent 2 will look for these signals in the lead&apos;s website to open emails with genuine relevance.
+                    </p>
                     <div className="stack">
-                      {strategyAngles.map((item) => (
-                        <label key={item.key} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                          <input
-                            type="checkbox"
-                            checked={selectedServiceAngles.includes(item.key)}
-                            onChange={() => setSelectedServiceAngles((prev) => toggleListItem(prev, item.key))}
-                          />
-                          <span>
-                            <strong>{item.label}</strong>
-                            <div className="muted">Best for: {item.best_for_categories.join(", ") || "-"}</div>
-                            <div className="muted">{item.why_relevant || "-"}</div>
-                          </span>
-                        </label>
+                      {strategyRapportPoints.map((item) => (
+                        <div key={item.category} className="kv">
+                          <strong>{item.display_name}</strong>
+                          <div className="muted" style={{ marginTop: 6 }}>
+                            {item.hooks.join(" • ")}
+                          </div>
+                        </div>
                       ))}
+                      {strategyRapportPoints.length === 0 ? (
+                        <span className="muted">No rapport points generated. Regenerate strategy after updating profile.</span>
+                      ) : null}
                     </div>
                   </div>
 

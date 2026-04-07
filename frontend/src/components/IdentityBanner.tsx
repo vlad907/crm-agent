@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { IDENTITY_UPDATED_EVENT, getUserId, getWorkspaceId } from "@/src/lib/identity";
+import { IDENTITY_UPDATED_EVENT, clearIdentity, getUserId, getWorkspaceId } from "@/src/lib/identity";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
 
@@ -27,6 +28,7 @@ function slugifyLabel(value: string): string {
 }
 
 export function IdentityBanner() {
+  const router = useRouter();
   const [workspaceId, setWorkspace] = useState("");
   const [userId, setUser] = useState("");
   const [workspaceLabel, setWorkspaceLabel] = useState("");
@@ -124,8 +126,16 @@ export function IdentityBanner() {
           <button type="button" className="identity-dropdown-item" disabled title="Coming soon">
             Switch Workspace (future)
           </button>
-          <button type="button" className="identity-dropdown-item" disabled title="Coming soon">
-            Logout (future)
+          <button
+            type="button"
+            className="identity-dropdown-item"
+            onClick={() => {
+              setMenuOpen(false);
+              clearIdentity();
+              router.push("/login");
+            }}
+          >
+            Log out
           </button>
         </div>
       ) : null}

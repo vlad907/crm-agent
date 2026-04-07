@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.lead import Lead
 from app.models.workspace_ai_strategy import WorkspaceAIStrategy
 from app.models.website_page import WebsitePage
 from app.models.workspace_profile import WorkspaceProfile
@@ -54,5 +55,8 @@ def build_prepared_lead_context(*, db: Session, workspace_id: UUID, lead_id: UUI
             "emails": sorted(emails),
             "phones": sorted(phones),
         },
-        "workspace_ai_strategy": build_strategy_context(workspace_ai_strategy),
+        "workspace_ai_strategy": build_strategy_context(
+            workspace_ai_strategy,
+            lead_category=db.get(Lead, lead_id).industry if db.get(Lead, lead_id) else None,
+        ),
     }

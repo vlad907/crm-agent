@@ -37,14 +37,22 @@ export function PipelineActionsCard({
   controls
 }: PipelineActionsCardProps) {
   return (
-    <section className="card stack">
+    <section className="card stack pipeline-actions-card">
       <h2>Pipeline Actions</h2>
-      <p className="muted">NEW -&gt; INGESTED -&gt; AGENT1 -&gt; AGENT2 -&gt; AGENT3 -&gt; READY/HOLD/SENT</p>
-      <div className="stage-row">
-        {stageItems.map((stage) => (
-          <span key={stage.label} className={`stage-pill stage-${stage.state}`}>
-            {stage.label}
-          </span>
+      <div className="pipeline-stepper">
+        {stageItems.map((stage, i) => (
+          <div key={stage.label} className="pipeline-stepper-item">
+            <div className="pipeline-stepper-row">
+              <div className={`pipeline-stepper-dot ${stage.state}`} aria-hidden />
+              {i < stageItems.length - 1 ? (
+                <div
+                  className={`pipeline-stepper-line ${stage.state === "done" ? "filled" : ""}`}
+                  aria-hidden
+                />
+              ) : null}
+            </div>
+            <span className={`pipeline-stepper-label stage-${stage.state}`}>{stage.label}</span>
+          </div>
         ))}
       </div>
       <div className="inline-actions">

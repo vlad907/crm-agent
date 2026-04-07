@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps.request_context import RequestContext, get_request_context
 from app.db.session import get_db
 from app.models.prospect import Prospect
 from app.schemas.prospect import (
+    LocationSuggestionItem,
+    LocationSuggestionsResponse,
+    ProspectBulkDeleteRequest,
+    ProspectBulkDeleteResponse,
     ProspectConvertRequest,
     ProspectConvertResponse,
     ProspectConvertSkipped,
@@ -24,6 +28,7 @@ from app.services.importers.google_business_crawler import (
     GooglePlacesCrawlerError,
     discover_google_business_prospects,
 )
+from app.services.lead_sources.google_places import GooglePlacesCrawler
 from app.services.prospect_service import (
     ProspectImportCandidate,
     ProspectImportResult,
@@ -101,6 +106,21 @@ def list_prospects(
     return ProspectListResponse(items=items, total=total, offset=offset, limit=limit)
 
 
+@router.post("/bulk-delete", response_model=ProspectBulkDeleteResponse)
+def bulk_delete_prospects(
+    payload: ProspectBulkDeleteRequest,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
+) -> ProspectBulkDeleteResponse:
+    stmt = delete(Prospect).where(
+        Prospect.workspace_id == ctx.workspace_id,
+        Prospect.id.in_(payload.prospect_ids),
+    )
+    result = db.execute(stmt)
+    db.commit()
+    return ProspectBulkDeleteResponse(deleted_count=result.rowcount or 0)
+
+
 @router.post("/import", response_model=ProspectImportResponse, status_code=status.HTTP_201_CREATED)
 def import_prospects(
     payload: ProspectImportRequest,
@@ -131,6 +151,29 @@ def import_prospects(
         candidates=candidates,
     )
     return _build_import_response(result, total_received=len(payload.items))
+
+
+@router.get("/location-suggestions", response_model=LocationSuggestionsResponse)
+def prospect_location_suggestions(
+    q: str = Query(..., min_length=2, max_length=200),
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
+) -> LocationSuggestionsResponse:
+    google_api_key, _ = resolve_google_places_api_key(db=db, workspace_id=ctx.workspace_id)
+    if not google_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google Places API key is missing. Configure workspace settings at /api/v1/settings or set GOOGLE_PLACES_API_KEY.",
+        )
+    try:
+        crawler = GooglePlacesCrawler(api_key=google_api_key)
+        raw = crawler.place_autocomplete(input_text=q)
+    except GooglePlacesCrawlerError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    return LocationSuggestionsResponse(
+        suggestions=[LocationSuggestionItem(description=item["description"], place_id=item["place_id"]) for item in raw],
+    )
 
 
 @router.post("/search", response_model=ProspectRunSearchResponse, status_code=status.HTTP_201_CREATED)
