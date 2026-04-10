@@ -373,39 +373,39 @@ export default function LeadsPage() {
       <section className="card surface-metrics stack">
         <h2 className="section-title">Pipeline Overview</h2>
         <div className="pipeline-lane pipeline-lane-clean">
-          <div className="pipeline-stage pipeline-stage-total">
+          <div className="pipeline-stage stage-total">
             <div className="metric-label">Total</div>
             <div className="metric-value">{stageCounts.total}</div>
           </div>
-          <div className="pipeline-stage">
+          <div className="pipeline-stage stage-imported">
             <div className="metric-label">Imported</div>
             <div className="metric-value">{stageCounts.imported}</div>
           </div>
-          <div className="pipeline-stage">
+          <div className="pipeline-stage stage-researching">
             <div className="metric-label">Researching</div>
             <div className="metric-value">{stageCounts.researching}</div>
           </div>
-          <div className="pipeline-stage">
+          <div className="pipeline-stage stage-researched">
             <div className="metric-label">Researched</div>
             <div className="metric-value">{stageCounts.researched}</div>
           </div>
-          <div className="pipeline-stage">
+          <div className="pipeline-stage stage-draft-ready">
             <div className="metric-label">Draft Ready</div>
             <div className="metric-value">{stageCounts.draft_ready}</div>
           </div>
-          <div className="pipeline-stage">
+          <div className="pipeline-stage stage-needs-review">
             <div className="metric-label">Needs Review</div>
             <div className="metric-value">{stageCounts.needs_review}</div>
           </div>
-          <div className="pipeline-stage">
+          <div className="pipeline-stage stage-approved">
             <div className="metric-label">Approved</div>
             <div className="metric-value">{stageCounts.approved}</div>
           </div>
-          <div className="pipeline-stage">
+          <div className="pipeline-stage stage-sent">
             <div className="metric-label">Sent</div>
             <div className="metric-value">{stageCounts.sent}</div>
           </div>
-          <div className="pipeline-stage">
+          <div className="pipeline-stage stage-archived">
             <div className="metric-label">Archived</div>
             <div className="metric-value">{stageCounts.archived}</div>
           </div>
