@@ -27,5 +27,6 @@ class WorkspaceAutomationSetting(TimestampMixin, Base):
     auto_create_gmail_draft: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     auto_send_approved_emails: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     pause_pipeline: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    inbox_reply_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="suggest_only")
 
     workspace: Mapped["Workspace"] = relationship(back_populates="automation_settings")

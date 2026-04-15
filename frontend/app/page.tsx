@@ -11,6 +11,7 @@ import {
   ApiError,
   deleteLeadsBulk,
   getLatestContext,
+  getLead,
   getLeads,
   ingestWebsite,
   runAgent1,
@@ -333,6 +334,59 @@ export default function LeadsPage() {
     }
   }
 
+  async function runBulkFullPipeline(): Promise<void> {
+    const selectedLeads = visibleLeads.filter((lead) => selectedVisibleIds.includes(lead.id));
+    if (selectedLeads.length === 0) return;
+
+    setError(null);
+    setActionMessage(null);
+    const label = "Full Pipeline";
+    setBulkProgress({ label, completed: 0, total: selectedLeads.length });
+
+    let succeeded = 0;
+    let failed = 0;
+    const failures: string[] = [];
+
+    for (let index = 0; index < selectedLeads.length; index += 1) {
+      let current: Lead = selectedLeads[index];
+      if (isReadyOrDone(current)) {
+        succeeded += 1;
+        setBulkProgress({ label, completed: index + 1, total: selectedLeads.length });
+        continue;
+      }
+      if (!current.website_url) {
+        failed += 1;
+        failures.push(`${current.company}: missing website URL`);
+        setBulkProgress({ label, completed: index + 1, total: selectedLeads.length });
+        continue;
+      }
+
+      let stepFailed = false;
+      let action = nextMissingAction(current);
+      while (action && !stepFailed) {
+        try {
+          await executeAction(current.id, action);
+          current = await getLead(current.id);
+          action = nextMissingAction(current);
+        } catch (actionError) {
+          stepFailed = true;
+          failed += 1;
+          failures.push(`${current.company} (${action}): ${getErrorMessage(actionError)}`);
+        }
+      }
+      if (!stepFailed) succeeded += 1;
+      setBulkProgress({ label, completed: index + 1, total: selectedLeads.length });
+    }
+
+    await fetchRows(offset, statusFilter, searchFilter);
+    setBulkProgress(null);
+    setActionMessage(`${label}: ${succeeded} succeeded, ${failed} failed.`);
+    if (failures.length > 0) {
+      const remaining = failures.length - 3;
+      setError(`${failures.slice(0, 3).join(" | ")}${remaining > 0 ? ` | +${remaining} more` : ""}`);
+    }
+  }
+
   async function runBulkDelete(): Promise<void> {
     if (selectedVisibleIds.length === 0) return;
     setDeleting(true);
@@ -441,7 +495,10 @@ export default function LeadsPage() {
               ) : null}
             </div>
             <div className="inline-actions">
-              <button type="button" className="btn-primary" disabled={isBulkRunning} onClick={() => void runBulk("ingest")}>
+              <button type="button" className="btn-primary btn-full-pipeline" disabled={isBulkRunning} onClick={() => void runBulkFullPipeline()}>
+                Run Full Pipeline
+              </button>
+              <button type="button" className="btn-secondary" disabled={isBulkRunning} onClick={() => void runBulk("ingest")}>
                 Bulk Ingest Website
               </button>
               <button type="button" className="btn-secondary" disabled={isBulkRunning} onClick={() => void runBulk("agent1")}>

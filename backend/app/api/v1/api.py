@@ -4,9 +4,12 @@ from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.automation_settings import router as automation_settings_router
 from app.api.v1.routes.draft_actions import router as draft_actions_router
 from app.api.v1.routes.drafts import router as drafts_router
+from app.api.v1.routes.inbox import router as inbox_router
 from app.api.v1.routes.integrations import router as integrations_router
+from app.api.v1.routes.jobs import router as jobs_router
 from app.api.v1.routes.leads import router as leads_router
 from app.api.v1.routes.me import router as me_router
+from app.api.v1.routes.partnerships import router as partnerships_router
 from app.api.v1.routes.prospects import router as prospects_router
 from app.api.v1.routes.settings import router as settings_router
 from app.api.v1.routes.website_pages import router as website_pages_router
@@ -27,6 +30,9 @@ api_router.include_router(integrations_router)
 api_router.include_router(workspaces_router)
 api_router.include_router(leads_router)
 api_router.include_router(prospects_router)
+api_router.include_router(partnerships_router)
+api_router.include_router(inbox_router)
+api_router.include_router(jobs_router)
 api_router.include_router(website_pages_router)
 api_router.include_router(snapshots_router)
 api_router.include_router(drafts_router)

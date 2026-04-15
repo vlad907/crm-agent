@@ -506,3 +506,112 @@ export interface WorkspaceAiStrategyUpdate {
   selected_service_angles?: string[] | null;
   selected_cta_style?: string | null;
 }
+
+/* ─── Partnership Candidates ─── */
+
+export interface PartnerCandidateListResponse {
+  items: PartnerCandidate[];
+  total: number;
+}
+
+export interface PartnerDiscoveryRequest {
+  query: string;
+  location?: string;
+  max_results?: number;
+}
+
+/* ─── Inbox / Email Threads ─── */
+
+export interface EmailMessage {
+  id: string;
+  thread_id: string;
+  direction: "inbound" | "outbound";
+  subject: string | null;
+  body: string | null;
+  sender: string | null;
+  recipients: JsonObject | null;
+  received_at: string | null;
+  classification: string | null;
+  suggested_response: { subject?: string; reply_body?: string } | null;
+  gmail_message_id: string | null;
+  created_at: string;
+}
+
+export interface EmailThread {
+  id: string;
+  workspace_id: string;
+  gmail_thread_id: string;
+  related_entity_type: string | null;
+  related_entity_id: string | null;
+  last_message_at: string | null;
+  status: string;
+  next_action: string | null;
+  next_action_detail: JsonObject | null;
+  reply_review_status: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmailThreadListItem extends EmailThread {
+  latest_message: EmailMessage | null;
+  classification: string | null;
+  related_entity_name: string | null;
+}
+
+export interface EmailThreadListResponse {
+  items: EmailThreadListItem[];
+  total: number;
+}
+
+export interface EmailThreadWithMessages extends EmailThread {
+  messages: EmailMessage[];
+}
+
+export interface InboxSyncResponse {
+  threads_synced: number;
+  messages_synced: number;
+  new_inbound: number;
+}
+
+export interface PartnerCandidate {
+  id: string;
+  workspace_id: string;
+  company_name: string;
+  website: string | null;
+  industry: string | null;
+  location: string | null;
+  partnership_type: string | null;
+  fit_score: number | null;
+  extracted_signals: JsonObject | null;
+  recommended_outreach_angle: string | null;
+  contact_emails: string[] | null;
+  contact_form_url: string | null;
+  source: string;
+  status: string;
+  outreach_subject: string | null;
+  outreach_body: string | null;
+  outreach_status: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Job {
+  id: string;
+  workspace_id: string;
+  title: string;
+  description: string | null;
+  job_type: string;
+  status: string;
+  source_thread_id: string | null;
+  source_entity_type: string | null;
+  source_entity_id: string | null;
+  scheduled_at: string | null;
+  metadata_json: JsonObject | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobListResponse {
+  items: Job[];
+  total: number;
+}

@@ -284,7 +284,10 @@ async function openMainWindow() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  const { session } = require("electron");
+  await session.defaultSession.clearCache();
+  await session.defaultSession.clearStorageData({ storages: ["cachestorage"] });
   void openMainWindow();
 });
 

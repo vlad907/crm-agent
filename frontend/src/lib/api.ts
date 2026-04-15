@@ -368,3 +368,143 @@ export function createWorkspace(payload: WorkspaceCreatePayload): Promise<Worksp
     requireIdentity: false
   });
 }
+
+/* ─── Partnerships ─── */
+
+import type {
+  PartnerCandidate,
+  PartnerCandidateListResponse,
+  PartnerDiscoveryRequest,
+  EmailThreadListResponse,
+  EmailThreadWithMessages,
+  EmailMessage,
+  InboxSyncResponse,
+} from "@/src/lib/types";
+
+export function getPartnerCandidates(limit = 50, offset = 0, status?: string): Promise<PartnerCandidateListResponse> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (status) params.set("status", status);
+  return apiFetch<PartnerCandidateListResponse>(`/api/v1/partnerships?${params}`);
+}
+
+export function getPartnerCandidate(id: string): Promise<PartnerCandidate> {
+  return apiFetch<PartnerCandidate>(`/api/v1/partnerships/${id}`);
+}
+
+export function discoverPartner(payload: PartnerDiscoveryRequest): Promise<PartnerCandidate> {
+  return apiFetch<PartnerCandidate>("/api/v1/partnerships/discover", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updatePartnerCandidate(id: string, payload: Record<string, unknown>): Promise<PartnerCandidate> {
+  return apiFetch<PartnerCandidate>(`/api/v1/partnerships/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deletePartnerCandidate(id: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/partnerships/${id}`, { method: "DELETE" });
+}
+
+/* ─── Inbox ─── */
+
+export function syncInbox(maxResults = 20): Promise<InboxSyncResponse> {
+  return apiFetch<InboxSyncResponse>(`/api/v1/inbox/sync?max_results=${maxResults}`, { method: "POST" });
+}
+
+export function getInboxThreads(limit = 50, offset = 0): Promise<EmailThreadListResponse> {
+  return apiFetch<EmailThreadListResponse>(`/api/v1/inbox/threads?limit=${limit}&offset=${offset}`);
+}
+
+export function getInboxThread(threadId: string): Promise<EmailThreadWithMessages> {
+  return apiFetch<EmailThreadWithMessages>(`/api/v1/inbox/threads/${threadId}`);
+}
+
+export function classifyThread(threadId: string): Promise<{ classification: Record<string, unknown>; message_id: string }> {
+  return apiFetch(`/api/v1/inbox/threads/${threadId}/classify`, { method: "POST" });
+}
+
+export function suggestReply(threadId: string): Promise<{ suggested_response: { subject: string; reply_body: string }; message_id: string }> {
+  return apiFetch(`/api/v1/inbox/threads/${threadId}/suggest-reply`, { method: "POST" });
+}
+
+export function reclassifyMessage(messageId: string, classification: string): Promise<EmailMessage> {
+  return apiFetch<EmailMessage>(`/api/v1/inbox/messages/${messageId}/reclassify`, {
+    method: "POST",
+    body: JSON.stringify({ classification }),
+  });
+}
+
+export function sendInboxReply(threadId: string, subject: string, body: string): Promise<EmailMessage> {
+  return apiFetch<EmailMessage>(`/api/v1/inbox/threads/${threadId}/send-reply`, {
+    method: "POST",
+    body: JSON.stringify({ subject, body }),
+  });
+}
+
+export function updateThreadStatus(threadId: string, newStatus: string): Promise<{ status: string }> {
+  return apiFetch(`/api/v1/inbox/threads/${threadId}/status?new_status=${encodeURIComponent(newStatus)}`, {
+    method: "PATCH",
+  });
+}
+
+export function approveReply(threadId: string): Promise<{ status: string }> {
+  return apiFetch(`/api/v1/inbox/threads/${threadId}/approve-reply`, { method: "POST" });
+}
+
+export function rejectReply(threadId: string): Promise<{ status: string }> {
+  return apiFetch(`/api/v1/inbox/threads/${threadId}/reject-reply`, { method: "POST" });
+}
+
+export function createInboxGmailDraft(threadId: string): Promise<{ gmail_draft_id: string; status: string }> {
+  return apiFetch(`/api/v1/inbox/threads/${threadId}/create-gmail-draft`, { method: "POST" });
+}
+
+export function getInboxReviewQueue(limit = 50): Promise<{ items: Array<Record<string, unknown>>; total: number }> {
+  return apiFetch(`/api/v1/inbox/review-queue?limit=${limit}`);
+}
+
+/* ─── Partner Outreach ─── */
+
+export function searchPartners(payload: {
+  discovery_intent: string;
+  max_results: number;
+  min_fit_score: number;
+}): Promise<{
+  progress: { total_found: number; analyzed: number; qualified: number; skipped_no_website: number; skipped_duplicate: number; errors: number };
+  candidates: PartnerCandidate[];
+}> {
+  return apiFetch("/api/v1/partnerships/search", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function generatePartnerOutreach(candidateId: string): Promise<PartnerCandidate> {
+  return apiFetch<PartnerCandidate>(`/api/v1/partnerships/${candidateId}/generate-outreach`, { method: "POST" });
+}
+
+export function sendPartnerOutreach(candidateId: string): Promise<PartnerCandidate> {
+  return apiFetch<PartnerCandidate>(`/api/v1/partnerships/${candidateId}/send-outreach`, { method: "POST" });
+}
+
+/* ─── Jobs ─── */
+
+import type { Job, JobListResponse } from "@/src/lib/types";
+
+export function getJobs(limit = 50, offset = 0, status?: string): Promise<JobListResponse> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (status) params.set("status", status);
+  return apiFetch<JobListResponse>(`/api/v1/jobs?${params}`);
+}
+
+export function createJob(payload: Record<string, unknown>): Promise<Job> {
+  return apiFetch<Job>("/api/v1/jobs", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateJob(jobId: string, payload: Record<string, unknown>): Promise<Job> {
+  return apiFetch<Job>(`/api/v1/jobs/${jobId}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
