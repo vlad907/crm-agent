@@ -427,6 +427,10 @@ export interface WorkspaceProfile {
   outreach_style?: string | null;
   preferred_cta?: string | null;
   do_not_mention: string[];
+  sender_name?: string | null;
+  sender_title?: string | null;
+  sender_phone?: string | null;
+  sender_email?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }
@@ -441,6 +445,10 @@ export interface WorkspaceProfileUpdate {
   outreach_style?: string | null;
   preferred_cta?: string | null;
   do_not_mention?: string[] | null;
+  sender_name?: string | null;
+  sender_title?: string | null;
+  sender_phone?: string | null;
+  sender_email?: string | null;
 }
 
 export interface StrategyIdealCustomer {
