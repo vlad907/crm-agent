@@ -32,4 +32,9 @@ class WorkspaceProfile(TimestampMixin, Base):
     preferred_cta: Mapped[str | None] = mapped_column(Text, nullable=True)
     do_not_mention: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
 
+    sender_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sender_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sender_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    sender_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     workspace: Mapped["Workspace"] = relationship(back_populates="profile")

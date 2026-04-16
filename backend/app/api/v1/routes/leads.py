@@ -569,6 +569,9 @@ def run_agent2_for_lead(
         api_key=openai_api_key,
     )
     strategy_context = build_strategy_context(strategy, lead_category=lead.industry)
+    from app.services.sender_signature import get_sender_info, replace_placeholders
+    sender_info = get_sender_info(db, ctx.workspace_id)
+
     try:
         agent2_output = run_agent2(
             lead_name=lead.name,
@@ -577,6 +580,7 @@ def run_agent2_for_lead(
             snapshot_text=latest_snapshot.raw_text,
             agent1_output=latest_agent1_draft.agent1_output,
             strategy_context=strategy_context,
+            sender_info=sender_info,
             api_key=openai_api_key,
         )
     except OpenAIConfigurationError as exc:
@@ -590,11 +594,14 @@ def run_agent2_for_lead(
     except OpenAIClientError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Agent2 failed: {exc}") from exc
 
+    final_subject = replace_placeholders(agent2_output["subject"], sender_info)
+    final_body = replace_placeholders(agent2_output["email_body"], sender_info)
+
     draft = EmailDraft(
         workspace_id=ctx.workspace_id,
         lead_id=lead_id,
-        subject=agent2_output["subject"][:255],
-        body=agent2_output["email_body"],
+        subject=final_subject[:255],
+        body=final_body,
         agent1_output=latest_agent1_draft.agent1_output,
         agent3_verdict={"used_signal": agent2_output["used_signal"], "source": "agent2"},
         decision="draft",

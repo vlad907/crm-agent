@@ -45,6 +45,8 @@ RULES:
 - For objection classification: address the concern professionally
 - Keep it concise (under 200 words for the reply body)
 - Subject should be a natural reply subject (Re: original subject)
+- If sender contact info is provided, use the real name, title, phone, and email in the signature
+- NEVER use placeholder brackets like [Your Name] or [Your Position] — use the actual values or omit
 
 Return valid JSON only matching the schema."""
 
@@ -61,6 +63,7 @@ def generate_response_draft(
     classification: str | None = None,
     workspace_profile: dict[str, Any] | None = None,
     ai_strategy: dict[str, Any] | None = None,
+    sender_info: dict[str, str] | None = None,
     api_key: str | None = None,
 ) -> dict[str, Any]:
     resolved_key = (api_key or "").strip() or (settings.openai_api_key or "").strip()
@@ -85,6 +88,12 @@ def generate_response_draft(
             guardrails = gen.get("guardrails") or {}
             if isinstance(guardrails, dict) and guardrails.get("do_not_claim"):
                 user_content += f"Guardrails — do not claim: {', '.join(guardrails['do_not_claim'])}\n\n"
+
+    if sender_info:
+        from app.services.sender_signature import get_sender_prompt_context
+        ctx = get_sender_prompt_context(sender_info)
+        if ctx:
+            user_content += ctx + "\n\n"
 
     if classification:
         user_content += f"Email classification: {classification}\n\n"

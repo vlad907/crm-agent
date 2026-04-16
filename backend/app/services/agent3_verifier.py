@@ -55,7 +55,8 @@ General rules:
 - Facts about THIS SPECIFIC LEAD (their business, their goals) stated as FACTS must be supported by the website/agent1. Do not hold hedged / industry-level language as false.
 - Our offer does NOT need to "align with" the lead's services. We pitch TO them.
 - Hold for: (a) false factual claim about THIS lead when phrased as fact, (b) fabricated specifics (invented quotes, fake offerings), (c) wrong CTA for our business type, (d) spam tone. When in doubt, send.
-- You may make minor tone edits in final_email, but do not add new factual claims."""
+- You may make minor tone edits in final_email, but do not add new factual claims.
+- If sender contact info is provided, ensure the sign-off uses those real values instead of placeholder brackets like [Your Name]."""
 
 
 class Agent3VerifierError(RuntimeError):

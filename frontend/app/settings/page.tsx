@@ -77,6 +77,10 @@ export default function SettingsPage() {
   const [outreachStyle, setOutreachStyle] = useState("");
   const [preferredCta, setPreferredCta] = useState("");
   const [doNotMention, setDoNotMention] = useState("");
+  const [senderName, setSenderName] = useState("");
+  const [senderTitle, setSenderTitle] = useState("");
+  const [senderPhone, setSenderPhone] = useState("");
+  const [senderEmail, setSenderEmail] = useState("");
   const [aiStrategy, setAiStrategy] = useState<WorkspaceAiStrategy | null>(null);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedPainPoints, setSelectedPainPoints] = useState<string[]>([]);
@@ -122,6 +126,10 @@ export default function SettingsPage() {
         setOutreachStyle(profile.outreach_style ?? "");
         setPreferredCta(profile.preferred_cta ?? "");
         setDoNotMention((profile.do_not_mention ?? []).join(", "));
+        setSenderName(profile.sender_name ?? "");
+        setSenderTitle(profile.sender_title ?? "");
+        setSenderPhone(profile.sender_phone ?? "");
+        setSenderEmail(profile.sender_email ?? "");
 
         applyAiStrategyState(strategy);
       })
@@ -183,13 +191,21 @@ export default function SettingsPage() {
         business_description: businessDescription.trim() || null,
         industries_served: csvToList(industriesServed),
         service_specialties: csvToList(serviceSpecialties),
-        service_area: serviceArea.trim() || null
+        service_area: serviceArea.trim() || null,
+        sender_name: senderName.trim() || null,
+        sender_title: senderTitle.trim() || null,
+        sender_phone: senderPhone.trim() || null,
+        sender_email: senderEmail.trim() || null,
       });
       setBusinessName(updated.business_name ?? "");
       setBusinessDescription(updated.business_description ?? "");
       setIndustriesServed((updated.industries_served ?? []).join(", "));
       setServiceSpecialties((updated.service_specialties ?? []).join(", "));
       setServiceArea(updated.service_area ?? "");
+      setSenderName(updated.sender_name ?? "");
+      setSenderTitle(updated.sender_title ?? "");
+      setSenderPhone(updated.sender_phone ?? "");
+      setSenderEmail(updated.sender_email ?? "");
       setProfileMessage(
         "General workspace profile saved. Regenerate AI strategy (AI Configuration tab) to update target categories and pain points."
       );
@@ -356,6 +372,48 @@ export default function SettingsPage() {
                   value={serviceSpecialties}
                   onChange={(event) => setServiceSpecialties(event.target.value)}
                   placeholder="wifi reliability, POS networking, camera systems"
+                />
+              </div>
+            </div>
+            <h3 style={{ marginTop: 20, marginBottom: 8, fontSize: ".95rem" }}>Sender Contact Info</h3>
+            <p className="muted" style={{ marginBottom: 10, fontSize: ".82rem" }}>Used in email signatures. Without these, AI-generated emails may contain placeholder brackets.</p>
+            <div className="row">
+              <div className="field">
+                <label htmlFor="sender_name">Your Name</label>
+                <input
+                  id="sender_name"
+                  value={senderName}
+                  onChange={(event) => setSenderName(event.target.value)}
+                  placeholder="John Smith"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="sender_title">Your Title / Position</label>
+                <input
+                  id="sender_title"
+                  value={senderTitle}
+                  onChange={(event) => setSenderTitle(event.target.value)}
+                  placeholder="Owner"
+                />
+              </div>
+            </div>
+            <div className="row">
+              <div className="field">
+                <label htmlFor="sender_phone">Phone Number</label>
+                <input
+                  id="sender_phone"
+                  value={senderPhone}
+                  onChange={(event) => setSenderPhone(event.target.value)}
+                  placeholder="(555) 123-4567"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="sender_email">Email Address</label>
+                <input
+                  id="sender_email"
+                  value={senderEmail}
+                  onChange={(event) => setSenderEmail(event.target.value)}
+                  placeholder="john@yourcompany.com"
                 />
               </div>
             </div>

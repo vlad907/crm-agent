@@ -44,7 +44,7 @@ def discover_and_analyze(
     if not combined_text.strip():
         combined_text = f"Company: {company_name}\nWebsite: {website_url}\n(No content could be extracted)"
 
-    api_key = resolve_openai_api_key(db, workspace_id)
+    api_key, _src = resolve_openai_api_key(db, workspace_id)
     result = run_partnership_fit_agent(
         website_text=combined_text,
         discovery_intent=discovery_intent,
@@ -95,7 +95,7 @@ def search_and_discover(
     """
     from app.services.partner_search_agent import search_for_partners
 
-    api_key = resolve_openai_api_key(db, workspace_id)
+    api_key, _src = resolve_openai_api_key(db, workspace_id)
     profile_dict = _get_workspace_profile(db, workspace_id)
 
     companies = search_for_partners(

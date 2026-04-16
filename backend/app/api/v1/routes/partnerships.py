@@ -219,6 +219,7 @@ def generate_partner_outreach(
     from app.services.response_draft_agent import generate_response_draft
     from app.services.workspace_credentials import resolve_openai_api_key
     from app.models.workspace_profile import WorkspaceProfile
+    from app.services.sender_signature import get_sender_info, replace_placeholders
 
     row = db.get(PartnerCandidate, candidate_id)
     if not row or row.workspace_id != ctx.workspace_id:
@@ -233,6 +234,8 @@ def generate_partner_outreach(
             "preferred_tone": profile.preferred_tone,
         }
 
+    sender_info = get_sender_info(db, ctx.workspace_id)
+
     signals = row.extracted_signals or {}
     context_text = f"Company: {row.company_name}\n"
     if signals.get("company_summary"):
@@ -242,17 +245,20 @@ def generate_partner_outreach(
     if row.recommended_outreach_angle:
         context_text += f"Recommended angle: {row.recommended_outreach_angle}\n"
 
-    api_key = resolve_openai_api_key(db, ctx.workspace_id)
+    api_key, _src = resolve_openai_api_key(db, ctx.workspace_id)
     result = generate_response_draft(
         inbound_body=context_text,
         inbound_subject=f"Partnership opportunity with {row.company_name}",
         classification="interested",
         workspace_profile=profile_dict,
+        sender_info=sender_info,
         api_key=api_key,
     )
 
-    row.outreach_subject = result.get("subject", "")
-    row.outreach_body = result.get("reply_body", "")
+    subject = replace_placeholders(result.get("subject", ""), sender_info)
+    body = replace_placeholders(result.get("reply_body", ""), sender_info)
+    row.outreach_subject = subject
+    row.outreach_body = body
     row.outreach_status = "draft"
     db.commit()
     db.refresh(row)

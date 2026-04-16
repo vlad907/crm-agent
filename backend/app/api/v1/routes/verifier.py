@@ -144,7 +144,14 @@ def run_agent3_for_lead(
     except Agent3VerifierError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Agent3 failed: {exc}") from exc
 
+    from app.services.sender_signature import get_sender_info, replace_placeholders
+    sender_info = get_sender_info(db, ctx.workspace_id)
+
     final_email = verdict["final_email"]
+    final_email["subject"] = replace_placeholders(final_email["subject"], sender_info)
+    final_email["email_body"] = replace_placeholders(final_email["email_body"], sender_info)
+    verdict["final_email"] = final_email
+
     latest_draft.agent3_verdict = verdict
     latest_draft.decision = verdict["decision"]
     latest_draft.subject = final_email["subject"][:255]

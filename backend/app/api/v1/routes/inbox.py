@@ -173,7 +173,7 @@ def classify_thread(
         for m in messages[:-1]
     ) if len(messages) > 1 else None
 
-    api_key = resolve_openai_api_key(db, ctx.workspace_id)
+    api_key, _src = resolve_openai_api_key(db, ctx.workspace_id)
     result = classify_email(
         email_body=latest.body or "",
         email_subject=latest.subject,
@@ -205,6 +205,7 @@ def suggest_reply(
     from app.services.workspace_credentials import resolve_openai_api_key
     from app.models.workspace_profile import WorkspaceProfile
     from app.models.workspace_ai_strategy import WorkspaceAIStrategy
+    from app.services.sender_signature import get_sender_info, replace_placeholders
 
     thread = db.get(EmailThread, thread_id)
     if not thread or thread.workspace_id != ctx.workspace_id:
@@ -235,12 +236,14 @@ def suggest_reply(
             "preferred_tone": profile.preferred_tone,
         }
 
+    sender_info = get_sender_info(db, ctx.workspace_id)
+
     strategy = db.get(WorkspaceAIStrategy, ctx.workspace_id)
     strategy_dict = None
     if strategy and strategy.generated_strategy:
         strategy_dict = {"generated_strategy": strategy.generated_strategy}
 
-    api_key = resolve_openai_api_key(db, ctx.workspace_id)
+    api_key, _src = resolve_openai_api_key(db, ctx.workspace_id)
     result = generate_response_draft(
         inbound_body=latest.body or "",
         inbound_subject=latest.subject,
@@ -248,8 +251,14 @@ def suggest_reply(
         classification=latest.classification,
         workspace_profile=profile_dict,
         ai_strategy=strategy_dict,
+        sender_info=sender_info,
         api_key=api_key,
     )
+
+    if result.get("subject"):
+        result["subject"] = replace_placeholders(result["subject"], sender_info)
+    if result.get("reply_body"):
+        result["reply_body"] = replace_placeholders(result["reply_body"], sender_info)
 
     latest.suggested_response = result
     thread.reply_review_status = "suggested"

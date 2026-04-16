@@ -74,6 +74,8 @@ RULES:
 - Only use information from the provided website text
 - Do NOT invent facts or capabilities not evidenced in the text
 - fit_score should be 0.0-0.3 for poor fit, 0.4-0.6 for moderate, 0.7-1.0 for strong fit
+- If sender contact info is provided, reference it for the outreach angle
+- NEVER use placeholder brackets like [Your Name] or [Recipient's Name] — use actual values or omit
 - Return valid JSON only matching the schema"""
 
 

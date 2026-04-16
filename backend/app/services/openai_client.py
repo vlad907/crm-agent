@@ -137,6 +137,11 @@ SERVICE + CTA:
 
 The user message gives MODE: SIGNAL, FALLBACK, or SOFT. Obey MODE rules before anything else.
 
+SIGNATURE:
+- If sender contact info is provided, use the real name, title, phone, and email in the sign-off.
+- NEVER use placeholder brackets like [Your Name], [Your Position], [Your Phone Number], or [Your Email].
+- If sender info is missing, end with a simple "Best regards" without placeholders.
+
 Return JSON only matching the required schema."""
 
 
@@ -223,6 +228,7 @@ def run_agent2(
     snapshot_text: str,
     agent1_output: dict[str, Any],
     strategy_context: dict[str, Any] | None = None,
+    sender_info: dict[str, str] | None = None,
     api_key: str | None = None,
 ) -> dict[str, Any]:
     resolved_api_key = (api_key or "").strip() or (settings.openai_api_key or "").strip()
@@ -241,6 +247,7 @@ def run_agent2(
         snapshot_text=snapshot_text,
         agent1_output=agent1_output,
         strategy_context=strategy_context,
+        sender_info=sender_info,
     )
     retries = max(0, settings.openai_rate_limit_retries)
     base_backoff = max(0.1, settings.openai_rate_limit_backoff_seconds)
@@ -328,6 +335,7 @@ def _build_agent2_payload(
     snapshot_text: str,
     agent1_output: dict[str, Any],
     strategy_context: dict[str, Any] | None = None,
+    sender_info: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     strategy = dict(strategy_context or {})
     agent1_canon = ensure_agent1_canonical_fields(agent1_output)
@@ -371,6 +379,14 @@ def _build_agent2_payload(
         f"{mode_instructions}\n"
         "- used_signal: briefly cite which evidence or angle you used (signal quote key, fallback topic, or website fact).\n"
     )
+
+    sender_block = ""
+    if sender_info:
+        from app.services.sender_signature import get_sender_prompt_context
+        ctx = get_sender_prompt_context(sender_info)
+        if ctx:
+            sender_block = f"\n{ctx}\n"
+
     return {
         "model": settings.openai_model,
         "input": [
@@ -386,6 +402,7 @@ def _build_agent2_payload(
                             "Website snapshot text:\n"
                             f"{snapshot_text}\n\n"
                             f"{strategy_instructions}\n"
+                            f"{sender_block}"
                             "Return subject, email_body, and used_signal."
                         ),
                     }
