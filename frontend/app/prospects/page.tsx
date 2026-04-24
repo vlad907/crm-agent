@@ -436,14 +436,14 @@ export default function ProspectsPage() {
                 </>
               }
             />
-            <div className="field">
-              <label htmlFor="search_radius">Radius (miles)</label>
+            <div className="field field-narrow">
+              <label htmlFor="search_radius">Radius (mi)</label>
               <input
                 id="search_radius"
                 type="number"
-                min={0.1}
+                min={1}
                 max={31}
-                step={0.5}
+                step={1}
                 value={runRadiusMiles}
                 onChange={(event) => setRunRadiusMiles(event.target.value)}
               />
@@ -555,7 +555,17 @@ export default function ProspectsPage() {
         ) : null}
 
         {loading ? <Spinner label="Loading prospects..." /> : null}
-        {error ? <div className="error">{error}</div> : null}
+        {error && error.includes("REQUEST_DENIED") ? (
+          <div className="error">
+            <strong>Google Places API not enabled.</strong> Go to{" "}
+            <a href="https://console.cloud.google.com/apis/library?filter=category:maps" target="_blank" rel="noreferrer" style={{ color: "inherit", textDecoration: "underline" }}>
+              Google Cloud Console &rarr; APIs &amp; Services &rarr; Library
+            </a>{" "}
+            and enable the <strong>Places API (New)</strong> for your project, then try again.
+          </div>
+        ) : error ? (
+          <div className="error">{error}</div>
+        ) : null}
         {actionMessage ? <div className="success">{actionMessage}</div> : null}
 
         <div className="table-wrap">

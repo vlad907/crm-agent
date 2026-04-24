@@ -237,19 +237,25 @@ def generate_partner_outreach(
     sender_info = get_sender_info(db, ctx.workspace_id)
 
     signals = row.extracted_signals or {}
-    context_text = f"Company: {row.company_name}\n"
+    context_text = (
+        f"COLD OUTREACH to: {row.company_name}\n"
+        f"We are reaching out to THEM — this is NOT a reply.\n"
+        f"Recipient company: {row.company_name}\n"
+    )
     if signals.get("company_summary"):
-        context_text += f"Summary: {signals['company_summary']}\n"
+        context_text += f"What they do: {signals['company_summary']}\n"
     if row.partnership_type:
         context_text += f"Partnership type: {row.partnership_type}\n"
     if row.recommended_outreach_angle:
-        context_text += f"Recommended angle: {row.recommended_outreach_angle}\n"
+        context_text += f"Our angle: {row.recommended_outreach_angle}\n"
+    if row.contact_emails:
+        context_text += f"Their contact: {row.contact_emails[0]}\n"
 
     api_key, _src = resolve_openai_api_key(db, ctx.workspace_id)
     result = generate_response_draft(
         inbound_body=context_text,
         inbound_subject=f"Partnership opportunity with {row.company_name}",
-        classification="interested",
+        classification="cold_outreach",
         workspace_profile=profile_dict,
         sender_info=sender_info,
         api_key=api_key,
