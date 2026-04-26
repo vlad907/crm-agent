@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.models.mixins import TimestampMixin
 
-PARTNER_STATUS_VALUES = ("new", "reviewed", "contacted", "replied", "active_partner", "ignored")
+PARTNER_STATUS_VALUES = ("new", "reviewed", "contacted", "replied", "active_partner", "ignored", "converted")
 
 
 class PartnerCandidate(TimestampMixin, Base):

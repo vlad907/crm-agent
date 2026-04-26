@@ -491,6 +491,22 @@ export function sendPartnerOutreach(candidateId: string): Promise<PartnerCandida
   return apiFetch<PartnerCandidate>(`/api/v1/partnerships/${candidateId}/send-outreach`, { method: "POST" });
 }
 
+export function convertPartnersToLeads(payload: {
+  partner_ids: string[];
+  require_website?: boolean;
+}): Promise<{
+  requested_count: number;
+  found_count: number;
+  converted_count: number;
+  skipped_count: number;
+  skipped: Array<{ partner_id: string; reason: string; company_name: string }>;
+}> {
+  return apiFetch("/api/v1/partnerships/convert-to-leads", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 /* ─── Jobs ─── */
 
 import type { Job, JobListResponse } from "@/src/lib/types";

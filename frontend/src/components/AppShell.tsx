@@ -30,8 +30,8 @@ const PIPELINE_NAV: NavItem[] = [
     ),
   },
   {
-    href: "/prospects",
-    label: "Prospects",
+    href: "/discovery",
+    label: "Discovery",
     icon: (
       <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
         <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -56,15 +56,6 @@ const OPS_NAV: NavItem[] = [
     icon: (
       <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-      </svg>
-    ),
-  },
-  {
-    href: "/partnerships",
-    label: "Partnerships",
-    icon: (
-      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-3-3h-1m-4 5H5v-2a3 3 0 013-3h1m4-1a4 4 0 110-8 4 4 0 010 8zm6 0a3 3 0 100-6 3 3 0 000 6zm-12 0a3 3 0 100-6 3 3 0 000 6z" />
       </svg>
     ),
   },
@@ -113,10 +104,11 @@ function applyTheme(theme: Theme): void {
 
 function resolvePageTitle(pathname: string): string {
   if (pathname === "/") return "Leads";
-  if (pathname === "/prospects") return "Prospects";
+  if (pathname === "/discovery") return "Discovery";
+  if (pathname === "/prospects") return "Discovery";
+  if (pathname === "/partnerships") return "Discovery";
   if (pathname === "/automation") return "Automation";
   if (pathname === "/inbox") return "Inbox";
-  if (pathname === "/partnerships") return "Partnerships";
   if (pathname === "/settings") return "Settings";
   if (pathname === "/onboarding") return "Setup";
   if (pathname === "/leads/new") return "New Lead";

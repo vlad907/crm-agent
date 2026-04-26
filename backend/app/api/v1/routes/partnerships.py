@@ -10,6 +10,9 @@ from app.api.deps.request_context import RequestContext, get_request_context
 from app.db.session import get_db
 from app.models.partner_candidate import PartnerCandidate
 from app.schemas.partner_candidate import (
+    ConvertPartnersRequest,
+    ConvertPartnersResponse,
+    ConvertPartnersSkipped,
     PartnerCandidateCreate,
     PartnerCandidateListResponse,
     PartnerCandidateRead,
@@ -106,6 +109,129 @@ def delete_candidate(
         raise HTTPException(status_code=404, detail="Partner candidate not found")
     db.delete(row)
     db.commit()
+
+
+@router.post("/convert-to-leads", response_model=ConvertPartnersResponse)
+def convert_partners_to_leads(
+    payload: ConvertPartnersRequest,
+    ctx: RequestContext = Depends(get_request_context),
+    db: Session = Depends(get_db),
+):
+    from app.models.lead import Lead
+    from app.models.lead_status import DEFAULT_LEAD_STATUS
+    from app.services.lead_import import normalize_website_url
+    from app.services.prospect_service import _clean_text, _website_variants, _company_address_key
+
+    rows = db.scalars(
+        select(PartnerCandidate).where(
+            PartnerCandidate.workspace_id == ctx.workspace_id,
+            PartnerCandidate.id.in_(payload.partner_ids),
+        )
+    ).all()
+    by_id = {r.id: r for r in rows}
+    partners = [by_id[pid] for pid in payload.partner_ids if pid in by_id]
+
+    candidate_websites = {
+        n for p in partners for n in [normalize_website_url(p.website)] if n
+    }
+    website_match_set = {v for w in candidate_websites for v in _website_variants(w)}
+    candidate_companies = {
+        cn.casefold() for p in partners for cn in [_clean_text(p.company_name)] if cn
+    }
+
+    existing_websites: set[str] = set()
+    if website_match_set:
+        existing_websites = {
+            w.casefold()
+            for w in db.scalars(
+                select(Lead.website_url).where(
+                    Lead.workspace_id == ctx.workspace_id,
+                    Lead.website_url.is_not(None),
+                    func.lower(Lead.website_url).in_(website_match_set),
+                )
+            ).all()
+            if w
+        }
+
+    existing_company_locations: set[str] = set()
+    if candidate_companies:
+        ca_rows = db.execute(
+            select(Lead.company, Lead.location).where(
+                Lead.workspace_id == ctx.workspace_id,
+                func.lower(Lead.company).in_(candidate_companies),
+            )
+        ).all()
+        existing_company_locations = {
+            k for c, l in ca_rows for k in [_company_address_key(c, l)] if k
+        }
+
+    converted_leads: list[Lead] = []
+    skipped: list[ConvertPartnersSkipped] = []
+    seen_websites: set[str] = set()
+    seen_company_locations: set[str] = set()
+
+    for partner in partners:
+        if partner.status == "converted":
+            skipped.append(ConvertPartnersSkipped(
+                partner_id=partner.id, reason="already_converted", company_name=partner.company_name,
+            ))
+            continue
+
+        website_url = normalize_website_url(partner.website)
+        if payload.require_website and not website_url:
+            skipped.append(ConvertPartnersSkipped(
+                partner_id=partner.id, reason="missing_website", company_name=partner.company_name,
+            ))
+            continue
+
+        dup_reason: str | None = None
+        if website_url:
+            variants = _website_variants(website_url)
+            if variants & existing_websites or variants & seen_websites:
+                dup_reason = "duplicate_website"
+        if not dup_reason:
+            cl_key = _company_address_key(partner.company_name, partner.location)
+            if cl_key and (cl_key in existing_company_locations or cl_key in seen_company_locations):
+                dup_reason = "duplicate_company_location"
+
+        if dup_reason:
+            skipped.append(ConvertPartnersSkipped(
+                partner_id=partner.id, reason=dup_reason, company_name=partner.company_name,
+            ))
+            continue
+
+        email = partner.contact_emails[0] if partner.contact_emails else None
+        lead = Lead(
+            workspace_id=ctx.workspace_id,
+            name=partner.company_name,
+            company=partner.company_name,
+            location=partner.location,
+            website_url=website_url,
+            email=email,
+            source="partnership_discovery",
+            status=DEFAULT_LEAD_STATUS,
+            industry=_clean_text(partner.industry),
+        )
+        converted_leads.append(lead)
+        partner.status = "converted"
+
+        if website_url:
+            seen_websites.update(_website_variants(website_url))
+        cl_key = _company_address_key(partner.company_name, partner.location)
+        if cl_key:
+            seen_company_locations.add(cl_key)
+
+    if converted_leads:
+        db.add_all(converted_leads)
+    db.commit()
+
+    return ConvertPartnersResponse(
+        requested_count=len(payload.partner_ids),
+        found_count=len(partners),
+        converted_count=len(converted_leads),
+        skipped_count=len(skipped),
+        skipped=skipped,
+    )
 
 
 @router.post("/search", response_model=PartnerSearchResponse)

@@ -940,6 +940,153 @@ th {
 .preset-btn:hover { background: var(--card-hover); }
 .preset-btn.active { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); }
 
+/* ───── discovery tabs ───── */
+.discovery-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+}
+
+.discovery-tab {
+  flex: 1;
+  padding: 10px 18px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font-weight: 600;
+  font-size: .9rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.discovery-tab:hover { color: var(--text); background: var(--card-hover); transform: none; }
+.discovery-tab.active { background: var(--card); color: var(--text); box-shadow: var(--shadow-sm); }
+
+/* ───── prospect card grid ───── */
+.prospect-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.prospect-card {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  background: var(--card);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.2s, transform 0.15s;
+}
+
+.prospect-card:hover {
+  border-color: var(--blue);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.prospect-card.selected {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.prospect-card-check {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.prospect-card-name {
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 6px 0;
+  padding-right: 28px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospect-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: .78rem;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.prospect-card-category {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--indigo-soft);
+  color: var(--indigo);
+  font-size: .7rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.prospect-card-address {
+  font-size: .82rem;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospect-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: .78rem;
+  color: var(--text-muted);
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  margin-top: 6px;
+}
+
+.prospect-card-stars {
+  display: inline-flex;
+  gap: 1px;
+  color: var(--amber);
+  font-size: .82rem;
+}
+
+.prospect-card-import-status {
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.prospect-card-import-status.status-new { color: var(--blue); }
+.prospect-card-import-status.status-imported { color: var(--green); }
+.prospect-card-import-status.status-skipped { color: var(--text-muted); }
+
+/* ───── fit score badge ───── */
+.fit-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: .74rem;
+  font-weight: 700;
+}
+
+.fit-badge-high { background: var(--green-soft); color: var(--green); }
+.fit-badge-mid { background: var(--amber-soft); color: var(--amber); }
+.fit-badge-low { background: var(--bg); color: var(--text-muted); }
+
 /* ───── settings tabs ───── */
 .settings-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
 

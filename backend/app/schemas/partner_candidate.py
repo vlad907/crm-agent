@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-PartnerStatus = Literal["new", "reviewed", "contacted", "replied", "active_partner", "ignored"]
+PartnerStatus = Literal["new", "reviewed", "contacted", "replied", "active_partner", "ignored", "converted"]
 
 
 class PartnerCandidateCreate(BaseModel):
@@ -81,3 +81,22 @@ class PartnerSearchProgress(BaseModel):
 class PartnerSearchResponse(BaseModel):
     progress: PartnerSearchProgress
     candidates: list[PartnerCandidateRead]
+
+
+class ConvertPartnersRequest(BaseModel):
+    partner_ids: list[UUID] = Field(min_length=1)
+    require_website: bool = False
+
+
+class ConvertPartnersSkipped(BaseModel):
+    partner_id: UUID
+    reason: str
+    company_name: str
+
+
+class ConvertPartnersResponse(BaseModel):
+    requested_count: int
+    found_count: int
+    converted_count: int
+    skipped_count: int
+    skipped: list[ConvertPartnersSkipped]
