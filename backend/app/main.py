@@ -9,9 +9,12 @@ from app.services.pipeline_worker import pipeline_worker
 
 app = FastAPI(title=settings.app_name)
 
+# Frontend may bind to any free local port (e.g. Docker remaps 3000 → 3080
+# when something else is holding 3000; Electron picks whatever is free).
+# Accept any localhost/loopback origin instead of a hardcoded port list.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
