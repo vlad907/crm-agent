@@ -118,7 +118,8 @@ def convert_partners_to_leads(
     db: Session = Depends(get_db),
 ):
     from app.models.lead import Lead
-    from app.models.lead_status import DEFAULT_LEAD_STATUS
+    from app.models.lead_status import DEFAULT_LEAD_STATUS, LEAD_STATUS_RESEARCHING
+    from app.models.website_snapshot import WebsiteSnapshot
     from app.services.lead_import import normalize_website_url
     from app.services.prospect_service import _clean_text, _website_variants, _company_address_key
 
@@ -201,6 +202,10 @@ def convert_partners_to_leads(
             continue
 
         email = partner.contact_emails[0] if partner.contact_emails else None
+        signals = partner.extracted_signals or {}
+        crawled_text = signals.get("crawled_text")
+        has_snapshot = bool(crawled_text and website_url)
+
         lead = Lead(
             workspace_id=ctx.workspace_id,
             name=partner.company_name,
@@ -209,9 +214,22 @@ def convert_partners_to_leads(
             website_url=website_url,
             email=email,
             source="partnership_discovery",
-            status=DEFAULT_LEAD_STATUS,
+            status=LEAD_STATUS_RESEARCHING if has_snapshot else DEFAULT_LEAD_STATUS,
             industry=_clean_text(partner.industry),
         )
+        db.add(lead)
+        db.flush()
+
+        if has_snapshot:
+            snapshot = WebsiteSnapshot(
+                workspace_id=ctx.workspace_id,
+                lead_id=lead.id,
+                url=website_url,
+                raw_text=crawled_text,
+                fetched_at=partner.created_at,
+            )
+            db.add(snapshot)
+
         converted_leads.append(lead)
         partner.status = "converted"
 
@@ -221,8 +239,6 @@ def convert_partners_to_leads(
         if cl_key:
             seen_company_locations.add(cl_key)
 
-    if converted_leads:
-        db.add_all(converted_leads)
     db.commit()
 
     return ConvertPartnersResponse(

@@ -3,8 +3,8 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import {
-  API_BASE,
   ApiError,
+  getApiBaseForDisplay,
   generateWorkspaceAiStrategy,
   getWorkspaceAiStrategy,
   getWorkspaceProfile,
@@ -697,7 +697,7 @@ export default function SettingsPage() {
         <div className="kv-grid">
           <div className="kv">
             <strong>API Base</strong>
-            {API_BASE}
+            {getApiBaseForDisplay()}
           </div>
           <div className="kv">
             <strong>Current Workspace ID</strong>

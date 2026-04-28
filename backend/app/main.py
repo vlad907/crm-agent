@@ -9,9 +9,10 @@ from app.services.pipeline_worker import pipeline_worker
 
 app = FastAPI(title=settings.app_name)
 
+# Desktop app may bind Next.js on any free port (3000, 3001, …). Allow any localhost origin.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -11,13 +11,11 @@ import {
   deletePartnerCandidate,
   deleteProspectsBulk,
   discoverPartner,
-  generatePartnerOutreach,
   getPartnerCandidates,
   getProspects,
   getWorkspaceAiStrategy,
   runProspectSearch,
   searchPartners,
-  sendPartnerOutreach,
   updatePartnerCandidate,
 } from "@/src/lib/api";
 import { useDebouncedValue } from "@/src/lib/hooks";
@@ -99,8 +97,6 @@ export default function DiscoveryPage() {
   const [showManual, setShowManual] = useState(false);
   const [discoveringManual, setDiscoveringManual] = useState(false);
   const [selectedCandidate, setSelectedCandidate] = useState<PartnerCandidate | null>(null);
-  const [generatingOutreach, setGeneratingOutreach] = useState(false);
-  const [sendingOutreach, setSendingOutreach] = useState(false);
   const [bulkProgress, setBulkProgress] = useState<{ label: string; done: number; total: number } | null>(null);
   const [convertingPartners, setConvertingPartners] = useState(false);
 
@@ -258,39 +254,7 @@ export default function DiscoveryPage() {
     } catch (e) { setError(getErr(e)); }
   }
 
-  async function handleGenerateOutreach() {
-    if (!selectedCandidate) return;
-    setGeneratingOutreach(true); setError(null);
-    try {
-      const u = await generatePartnerOutreach(selectedCandidate.id);
-      setSelectedCandidate(u); setMessage("Outreach draft generated."); await fetchPartners();
-    } catch (e) { setError(getErr(e)); }
-    finally { setGeneratingOutreach(false); }
-  }
 
-  async function handleSendOutreach() {
-    if (!selectedCandidate) return;
-    setSendingOutreach(true); setError(null);
-    try {
-      const u = await sendPartnerOutreach(selectedCandidate.id);
-      setSelectedCandidate(u); setMessage("Gmail draft created."); await fetchPartners();
-    } catch (e) { setError(getErr(e)); }
-    finally { setSendingOutreach(false); }
-  }
-
-  async function bulkGenerateOutreach() {
-    const targets = candidates.filter(c => selectedPartnerIds.has(c.id));
-    if (!targets.length) return;
-    setError(null); setMessage(null);
-    setBulkProgress({ label: "Generating outreach", done: 0, total: targets.length });
-    let ok = 0;
-    for (let i = 0; i < targets.length; i++) {
-      try { await generatePartnerOutreach(targets[i].id); ok++; } catch { /* skip */ }
-      setBulkProgress({ label: "Generating outreach", done: i + 1, total: targets.length });
-    }
-    setBulkProgress(null); await fetchPartners();
-    setMessage(`Bulk outreach: ${ok}/${targets.length} generated.`);
-  }
 
   async function bulkDeletePartners() {
     const ids = [...selectedPartnerIds];
@@ -451,30 +415,36 @@ export default function DiscoveryPage() {
             </form>
           </section>
 
-          {/* Bulk bar */}
-          {selectedProspectIds.size > 0 && (
-            <div className="bulk-action-bar">
-              <strong>{selectedProspectIds.size} selected</strong>
-              <div className="inline-actions">
-                <button className="btn-primary" type="button" disabled={converting} onClick={() => void onConvertProspects()}>
-                  {converting ? "Converting..." : "Add to CRM"}
-                </button>
-                <button className="btn-secondary" type="button" onClick={onExportCsv}>Export CSV</button>
-                <button className="btn-danger" type="button" disabled={deletingProspects} onClick={() => void onDeleteProspects()}>
-                  {deletingProspects ? "Deleting..." : "Delete"}
-                </button>
-                <button className="btn-secondary" type="button" onClick={() => setSelectedProspectIds(new Set())}>Clear</button>
-              </div>
+          {/* Header + inline toolbar */}
+          <div className="list-toolbar">
+            <div className="list-toolbar-left">
+              <h2 style={{ margin: 0 }}>Prospects</h2>
+              {selectedProspectIds.size > 0 && (
+                <span className="toolbar-count">{selectedProspectIds.size} selected</span>
+              )}
             </div>
-          )}
-
-          {/* Card header */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h2>Prospects</h2>
-            <button type="button" className="btn-secondary" style={{ fontSize: ".78rem", padding: "5px 10px" }}
-              disabled={prospects.length === 0} onClick={toggleAllProspects}>
-              {allProspectsSelected ? "Unselect All" : "Select All"}
-            </button>
+            <div className="list-toolbar-right">
+              {selectedProspectIds.size > 0 ? (
+                <>
+                  <button className="btn-primary" type="button" style={{ fontSize: ".78rem", padding: "5px 12px" }}
+                    disabled={converting} onClick={() => void onConvertProspects()}>
+                    {converting ? "Converting..." : "Add to CRM"}
+                  </button>
+                  <button className="btn-secondary" type="button" style={{ fontSize: ".78rem", padding: "5px 12px" }} onClick={onExportCsv}>Export CSV</button>
+                  <button className="btn-danger" type="button" style={{ fontSize: ".78rem", padding: "5px 12px" }}
+                    disabled={deletingProspects} onClick={() => void onDeleteProspects()}>
+                    {deletingProspects ? "Deleting..." : "Delete"}
+                  </button>
+                  <button className="btn-ghost" type="button" style={{ fontSize: ".78rem", padding: "5px 12px" }}
+                    onClick={() => setSelectedProspectIds(new Set())}>Clear</button>
+                </>
+              ) : (
+                <button type="button" className="btn-secondary" style={{ fontSize: ".78rem", padding: "5px 10px" }}
+                  disabled={prospects.length === 0} onClick={toggleAllProspects}>
+                  {allProspectsSelected ? "Unselect All" : "Select All"}
+                </button>
+              )}
+            </div>
           </div>
 
           {loadingProspects && <Spinner label="Loading prospects..." />}
@@ -594,170 +564,224 @@ export default function DiscoveryPage() {
             </section>
           )}
 
-          {/* Bulk bar */}
-          {selectedPartnerIds.size > 0 && (
-            <div className="bulk-action-bar">
-              <div>
-                <strong>{selectedPartnerIds.size} selected</strong>
-                {bulkProgress && <div className="muted" style={{ marginTop: 4, fontSize: ".82rem" }}>{bulkProgress.label}: {bulkProgress.done}/{bulkProgress.total}</div>}
-              </div>
-              <div className="inline-actions">
-                <button type="button" className="btn-primary btn-full-pipeline" disabled={isBulkRunning || convertingPartners} onClick={() => void bulkConvertPartners()}>
-                  {convertingPartners ? "Converting..." : "Convert to Leads"}
-                </button>
-                <button type="button" className="btn-secondary" disabled={isBulkRunning} onClick={() => void bulkGenerateOutreach()}>Bulk Outreach</button>
-                <select disabled={isBulkRunning} onChange={e => { if (e.target.value) { void bulkStatusChange(e.target.value); e.target.value = ""; } }} defaultValue="" style={{ fontSize: ".82rem", padding: "6px 10px" }}>
-                  <option value="" disabled>Set Status...</option>
-                  {PARTNER_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
-                </select>
-                <button type="button" className="btn-danger" disabled={isBulkRunning} onClick={() => void bulkDeletePartners()}>Delete</button>
-                <button type="button" className="btn-secondary" disabled={isBulkRunning} onClick={() => setSelectedPartnerIds(new Set())}>Clear</button>
-              </div>
+          {/* Header + inline toolbar */}
+          <div className="list-toolbar">
+            <div className="list-toolbar-left">
+              <h2 style={{ margin: 0 }}>Partner Candidates</h2>
+              {selectedPartnerIds.size > 0 && (
+                <span className="toolbar-count">{selectedPartnerIds.size} selected</span>
+              )}
+              {bulkProgress && <span className="muted" style={{ fontSize: ".78rem" }}>{bulkProgress.label}: {bulkProgress.done}/{bulkProgress.total}</span>}
             </div>
-          )}
-
-          <div style={{ display: "grid", gridTemplateColumns: selectedCandidate ? "1fr 1fr" : "1fr", gap: 16 }}>
-            {/* Candidate list */}
-            <section className="card" style={{ padding: 0, overflow: "hidden" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 18px 12px" }}>
-                <h2>Candidates ({candidates.length})</h2>
+            <div className="list-toolbar-right">
+              {selectedPartnerIds.size > 0 ? (
+                <>
+                  <button type="button" className="btn-primary" style={{ fontSize: ".78rem", padding: "5px 12px" }}
+                    disabled={isBulkRunning || convertingPartners} onClick={() => void bulkConvertPartners()}>
+                    {convertingPartners ? "Converting..." : "Convert to Leads"}
+                  </button>
+                  <select disabled={isBulkRunning} onChange={e => { if (e.target.value) { void bulkStatusChange(e.target.value); e.target.value = ""; } }} defaultValue=""
+                    style={{ fontSize: ".78rem", padding: "5px 8px" }}>
+                    <option value="" disabled>Status...</option>
+                    {PARTNER_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                  </select>
+                  <button type="button" className="btn-danger" style={{ fontSize: ".78rem", padding: "5px 12px" }}
+                    disabled={isBulkRunning} onClick={() => void bulkDeletePartners()}>Delete</button>
+                  <button type="button" className="btn-ghost" style={{ fontSize: ".78rem", padding: "5px 12px" }}
+                    disabled={isBulkRunning} onClick={() => setSelectedPartnerIds(new Set())}>Clear</button>
+                </>
+              ) : (
                 <button type="button" className="btn-secondary" style={{ fontSize: ".78rem", padding: "5px 10px" }}
                   disabled={candidates.length === 0} onClick={toggleAllPartners}>
                   {allPartnersSelected ? "Unselect All" : "Select All"}
                 </button>
-              </div>
-              <div style={{ maxHeight: "calc(100vh - 500px)", overflowY: "auto", padding: "0 18px 18px" }}>
-                {loadingPartners && <Spinner label="Loading..." />}
-                {!loadingPartners && candidates.length === 0 && <p className="muted">No candidates yet. Run a search above.</p>}
-                {candidates.map(c => (
-                  <div key={c.id} className={`subcard${selectedCandidate?.id === c.id ? " active-thread" : ""}`}
-                    style={{ marginBottom: 8, cursor: "pointer", padding: "10px 12px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <input type="checkbox" checked={selectedPartnerIds.has(c.id)} onChange={() => togglePartner(c.id)}
-                        onClick={e => e.stopPropagation()} style={{ width: 16, height: 16, flexShrink: 0 }} />
-                      <div style={{ flex: 1, minWidth: 0 }} onClick={() => setSelectedCandidate(c)}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
-                          <strong style={{ fontSize: ".86rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.company_name}</strong>
-                          <span className={`stage-pill ${c.status === "converted" ? "stage-done" : c.status === "new" ? "stage-active" : "stage-done"}`}
-                            style={{ fontSize: ".68rem", flexShrink: 0, marginLeft: 8 }}>
-                            {c.status.replace(/_/g, " ")}
-                          </span>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".78rem" }}>
-                          <span className="muted">{c.partnership_type || "unclassified"}</span>
-                          {c.fit_score != null && (
-                            <span className={fitBadgeClass(c.fit_score)}>{(c.fit_score * 100).toFixed(0)}%</span>
-                          )}
-                        </div>
+              )}
+            </div>
+          </div>
+
+          {loadingPartners && <Spinner label="Loading partners..." />}
+          {!loadingPartners && candidates.length === 0 && (
+            <div className="empty-state">No partner candidates yet. Run a search above to discover partners.</div>
+          )}
+
+          {/* Card grid for partners */}
+          {!loadingPartners && candidates.length > 0 && (
+            <div className="prospect-grid">
+              {candidates.map(c => {
+                const sigs = c.extracted_signals as Record<string, string | string[] | number | null> | null;
+                const isConverted = c.status === "converted";
+                return (
+                  <div key={c.id}
+                    className={`prospect-card${selectedPartnerIds.has(c.id) ? " selected" : ""}${selectedCandidate?.id === c.id ? " selected" : ""}`}
+                    onClick={() => setSelectedCandidate(c)}
+                  >
+                    <input type="checkbox" className="prospect-card-check"
+                      checked={selectedPartnerIds.has(c.id)}
+                      onChange={() => togglePartner(c.id)}
+                      onClick={e => e.stopPropagation()} />
+
+                    <div className="prospect-card-name">{c.company_name}</div>
+
+                    <div className="prospect-card-meta">
+                      {c.partnership_type && <span className="prospect-card-category">{c.partnership_type}</span>}
+                      {c.fit_score != null && (
+                        <span className={fitBadgeClass(c.fit_score)}>{(c.fit_score * 100).toFixed(0)}% fit</span>
+                      )}
+                      <span className={`stage-pill ${isConverted ? "stage-done" : c.status === "new" ? "stage-active" : c.status === "ignored" ? "stage-pending" : "stage-done"}`}
+                        style={{ fontSize: ".66rem" }}>
+                        {c.status.replace(/_/g, " ")}
+                      </span>
+                    </div>
+
+                    {sigs?.company_summary && (
+                      <div style={{ fontSize: ".8rem", color: "var(--text-secondary)", lineHeight: 1.4, marginBottom: 6,
+                        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                        {String(sigs.company_summary)}
                       </div>
+                    )}
+
+                    <div className="prospect-card-footer">
+                      <span>
+                        {c.website ? (
+                          <a href={c.website} target="_blank" rel="noreferrer" className="external-link" onClick={e => e.stopPropagation()}>
+                            Website
+                          </a>
+                        ) : <span style={{ color: "var(--text-muted)" }}>No website</span>}
+                        {c.contact_emails?.length ? (
+                          <span style={{ marginLeft: 12, color: "var(--text-muted)" }}>{c.contact_emails[0]}</span>
+                        ) : null}
+                      </span>
+                      {c.outreach_status && (
+                        <span style={{ fontSize: ".68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em",
+                          color: c.outreach_status === "gmail_draft_created" ? "var(--green)" : "var(--blue)" }}>
+                          {c.outreach_status.replace(/_/g, " ")}
+                        </span>
+                      )}
                     </div>
                   </div>
-                ))}
-              </div>
-            </section>
+                );
+              })}
+            </div>
+          )}
 
-            {/* Detail panel */}
-            {selectedCandidate && (
-              <section className="card" style={{ maxHeight: "calc(100vh - 500px)", overflowY: "auto" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                  <h2 style={{ fontSize: "1.1rem" }}>{selectedCandidate.company_name}</h2>
-                  <div className="inline-actions">
-                    <select value={selectedCandidate.status}
-                      onChange={e => { void updatePartnerCandidate(selectedCandidate.id, { status: e.target.value }).then(u => { setSelectedCandidate(u); void fetchPartners(); }); }}
-                      style={{ fontSize: ".82rem", padding: "4px 8px" }}>
-                      {PARTNER_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
-                    </select>
-                    <button type="button" className="btn-primary btn-full-pipeline" style={{ fontSize: ".78rem", padding: "4px 10px" }}
-                      disabled={selectedCandidate.status === "converted" || convertingPartners}
-                      onClick={() => {
-                        setConvertingPartners(true);
-                        convertPartnersToLeads({ partner_ids: [selectedCandidate.id], require_website: true })
-                          .then(r => { setMessage(`Converted ${r.converted_count} to lead.`); void fetchPartners(); setSelectedCandidate(null); })
-                          .catch(e => setError(getErr(e)))
-                          .finally(() => setConvertingPartners(false));
-                      }}>
-                      Convert to Lead
-                    </button>
-                    <button type="button" className="btn-danger" style={{ fontSize: ".78rem", padding: "4px 10px" }}
-                      onClick={() => void handleDeletePartner(selectedCandidate.id)}>Delete</button>
+          {/* Slide-in detail panel */}
+          {selectedCandidate && (
+            <>
+              <div className="slideout-backdrop" onClick={() => setSelectedCandidate(null)} />
+              <aside className="slideout-panel">
+                <div className="slideout-header">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <h2 style={{ fontSize: "1.15rem", margin: 0 }}>{selectedCandidate.company_name}</h2>
+                    {selectedCandidate.website && (
+                      <a href={selectedCandidate.website} target="_blank" rel="noopener noreferrer" className="external-link" style={{ fontSize: ".84rem" }}>
+                        {selectedCandidate.website}
+                      </a>
+                    )}
                   </div>
+                  <button type="button" className="slideout-close" onClick={() => setSelectedCandidate(null)} aria-label="Close">&times;</button>
                 </div>
 
-                <div className="stack" style={{ gap: 10 }}>
-                  {selectedCandidate.website && (
+                {/* Actions row */}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "0 24px", marginBottom: 16 }}>
+                  <select value={selectedCandidate.status}
+                    onChange={e => { void updatePartnerCandidate(selectedCandidate.id, { status: e.target.value }).then(u => { setSelectedCandidate(u); void fetchPartners(); }); }}
+                    style={{ fontSize: ".82rem", padding: "6px 10px" }}>
+                    {PARTNER_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                  </select>
+                  <button type="button" className="btn-primary" style={{ fontSize: ".8rem" }}
+                    disabled={selectedCandidate.status === "converted" || convertingPartners}
+                    onClick={() => {
+                      setConvertingPartners(true);
+                      convertPartnersToLeads({ partner_ids: [selectedCandidate.id], require_website: true })
+                        .then(r => { setMessage(`Converted ${r.converted_count} to lead.`); void fetchPartners(); setSelectedCandidate(null); })
+                        .catch(e => setError(getErr(e)))
+                        .finally(() => setConvertingPartners(false));
+                    }}>
+                    Convert to Lead
+                  </button>
+                  <button type="button" className="btn-danger" style={{ fontSize: ".8rem" }}
+                    onClick={() => void handleDeletePartner(selectedCandidate.id)}>Delete</button>
+                </div>
+
+                {/* Scrollable content */}
+                <div className="slideout-body">
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
                     <div className="subcard">
-                      <strong style={{ fontSize: ".72rem", color: "var(--text-muted)" }}>Website</strong>
-                      <div><a href={selectedCandidate.website} target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue)", fontSize: ".88rem" }}>{selectedCandidate.website}</a></div>
+                      <strong className="slideout-label">Type</strong>
+                      <div style={{ fontWeight: 600, marginTop: 4 }}>{selectedCandidate.partnership_type || "—"}</div>
                     </div>
-                  )}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <div className="subcard">
-                      <strong style={{ fontSize: ".72rem", color: "var(--text-muted)" }}>Partnership Type</strong>
-                      <div style={{ fontWeight: 600 }}>{selectedCandidate.partnership_type || "—"}</div>
-                    </div>
-                    <div className="subcard">
-                      <strong style={{ fontSize: ".72rem", color: "var(--text-muted)" }}>Fit Score</strong>
-                      <div style={{ fontWeight: 700, fontSize: "1.2rem" }}>
+                      <strong className="slideout-label">Fit Score</strong>
+                      <div style={{ marginTop: 4 }}>
                         {selectedCandidate.fit_score != null ? (
-                          <span className={fitBadgeClass(selectedCandidate.fit_score)} style={{ fontSize: "1rem" }}>
+                          <span className={fitBadgeClass(selectedCandidate.fit_score)} style={{ fontSize: "1.1rem", padding: "4px 14px" }}>
                             {(selectedCandidate.fit_score * 100).toFixed(0)}%
                           </span>
-                        ) : "—"}
+                        ) : <span style={{ color: "var(--text-muted)" }}>—</span>}
                       </div>
                     </div>
                   </div>
+
                   {signals?.company_summary && (
-                    <div className="subcard">
-                      <strong style={{ fontSize: ".72rem", color: "var(--text-muted)" }}>Summary</strong>
-                      <div style={{ fontSize: ".86rem", lineHeight: 1.5 }}>{String(signals.company_summary)}</div>
+                    <div className="subcard" style={{ marginBottom: 14 }}>
+                      <strong className="slideout-label">Company Summary</strong>
+                      <div style={{ fontSize: ".86rem", lineHeight: 1.55, marginTop: 4 }}>{String(signals.company_summary)}</div>
                     </div>
                   )}
+
                   {reasons.length > 0 && (
-                    <div className="subcard">
-                      <strong style={{ fontSize: ".72rem", color: "var(--text-muted)" }}>Fit Reasons</strong>
+                    <div className="subcard" style={{ marginBottom: 14 }}>
+                      <strong className="slideout-label">Fit Reasons</strong>
                       <ul style={{ margin: "6px 0 0 16px", fontSize: ".86rem", lineHeight: 1.6 }}>
                         {reasons.map((r, i) => <li key={i}>{r}</li>)}
                       </ul>
                     </div>
                   )}
+
                   {selectedCandidate.recommended_outreach_angle && (
-                    <div className="subcard">
-                      <strong style={{ fontSize: ".72rem", color: "var(--text-muted)" }}>Outreach Angle</strong>
-                      <div style={{ fontSize: ".86rem" }}>{selectedCandidate.recommended_outreach_angle}</div>
+                    <div className="subcard" style={{ marginBottom: 14 }}>
+                      <strong className="slideout-label">Outreach Angle</strong>
+                      <div style={{ fontSize: ".86rem", marginTop: 4 }}>{selectedCandidate.recommended_outreach_angle}</div>
                     </div>
                   )}
+
                   {selectedCandidate.contact_emails?.length ? (
-                    <div className="subcard">
-                      <strong style={{ fontSize: ".72rem", color: "var(--text-muted)" }}>Contact Emails</strong>
-                      <div style={{ fontSize: ".86rem" }}>{selectedCandidate.contact_emails.join(", ")}</div>
+                    <div className="subcard" style={{ marginBottom: 14 }}>
+                      <strong className="slideout-label">Contacts</strong>
+                      <div style={{ fontSize: ".86rem", marginTop: 4 }}>{selectedCandidate.contact_emails.join(", ")}</div>
                     </div>
                   ) : null}
 
-                  <div className="subcard">
-                    <strong style={{ fontSize: ".72rem", color: "var(--text-muted)" }}>Outreach Draft</strong>
-                    {selectedCandidate.outreach_subject ? (
-                      <div style={{ marginTop: 8 }}>
-                        <div style={{ fontSize: ".82rem", fontWeight: 600, marginBottom: 4 }}>{selectedCandidate.outreach_subject}</div>
-                        <div style={{ fontSize: ".82rem", whiteSpace: "pre-wrap", lineHeight: 1.5, background: "var(--bg)", padding: 10, borderRadius: "var(--radius-sm)", border: "1px solid var(--line)" }}>
-                          {selectedCandidate.outreach_body}
-                        </div>
-                      </div>
-                    ) : <p className="muted" style={{ fontSize: ".82rem", marginTop: 4 }}>No draft yet.</p>}
-                    <div className="inline-actions" style={{ marginTop: 10, gap: 8 }}>
-                      <button type="button" className="btn-secondary" disabled={generatingOutreach} onClick={() => void handleGenerateOutreach()}>
-                        {generatingOutreach ? "Generating..." : selectedCandidate.outreach_subject ? "Regenerate" : "Generate Outreach"}
+                  {/* Convert CTA */}
+                  {selectedCandidate.status !== "converted" && (
+                    <div className="subcard" style={{ background: "var(--blue-soft)", borderColor: "var(--blue)", textAlign: "center", padding: "16px 14px" }}>
+                      <p style={{ fontSize: ".86rem", color: "var(--text-secondary)", margin: "0 0 10px" }}>
+                        Convert to a lead to generate outreach emails using the pipeline.
+                      </p>
+                      <button type="button" className="btn-primary" style={{ fontSize: ".85rem" }}
+                        disabled={convertingPartners}
+                        onClick={() => {
+                          setConvertingPartners(true);
+                          convertPartnersToLeads({ partner_ids: [selectedCandidate.id], require_website: true })
+                            .then(r => { setMessage(`Converted ${r.converted_count} to lead — website research already applied.`); void fetchPartners(); setSelectedCandidate(null); })
+                            .catch(e => setError(getErr(e)))
+                            .finally(() => setConvertingPartners(false));
+                        }}>
+                        {convertingPartners ? "Converting..." : "Convert to Lead & Start Pipeline"}
                       </button>
-                      {selectedCandidate.outreach_subject && selectedCandidate.contact_emails?.length ? (
-                        <button type="button" className="btn-primary" disabled={sendingOutreach} onClick={() => void handleSendOutreach()}>
-                          {sendingOutreach ? "Creating..." : "Create Gmail Draft"}
-                        </button>
-                      ) : null}
                     </div>
-                  </div>
+                  )}
+                  {selectedCandidate.status === "converted" && (
+                    <div className="subcard" style={{ background: "var(--green-soft)", borderColor: "var(--green)", textAlign: "center", padding: "14px" }}>
+                      <p style={{ fontSize: ".86rem", color: "var(--green)", fontWeight: 600, margin: 0 }}>
+                        Converted to lead — manage outreach from the Leads page.
+                      </p>
+                    </div>
+                  )}
                 </div>
-              </section>
-            )}
-          </div>
+              </aside>
+            </>
+          )}
         </>
       )}
     </div>

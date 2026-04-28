@@ -4,12 +4,29 @@ import { resolveLeadPipeline, stageLabel } from "@/src/lib/leadPipeline";
 interface LeadSummaryCardProps {
   lead: Lead | null;
   loading: boolean;
+  draftsCount?: number;
+  hasSnapshot?: boolean;
 }
 
-function toLocalDate(value?: string): string {
-  if (!value) return "-";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+function toRelative(value?: string): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  const diff = Date.now() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return d.toLocaleDateString();
+}
+
+function toDate(value?: string): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
 function initials(name?: string | null, company?: string | null): string {
@@ -24,87 +41,115 @@ function initials(name?: string | null, company?: string | null): string {
   return "??";
 }
 
-export function LeadSummaryCard({ lead, loading }: LeadSummaryCardProps) {
-  const stage = lead ? resolveLeadPipeline(lead).computed_stage : "imported";
+function stageColor(stage: string): string {
+  if (["approved", "sent", "replied", "converted"].includes(stage)) return "green";
+  if (["needs_review", "archived"].includes(stage)) return "amber";
+  if (["draft_ready", "drafting"].includes(stage)) return "purple";
+  return "blue";
+}
 
-  return (
-    <section className="card lead-profile-card">
-      {loading ? (
-        <div className="lead-profile-header lead-profile-skeleton">
-          <div className="lead-profile-avatar" aria-hidden />
-          <div className="lead-profile-info">
-            <div className="lead-profile-name">Loading...</div>
-            <div className="lead-profile-company">—</div>
-            <div className="lead-profile-meta">—</div>
+export function LeadSummaryCard({ lead, loading, draftsCount = 0, hasSnapshot = false }: LeadSummaryCardProps) {
+  const pipeline = lead ? resolveLeadPipeline(lead) : null;
+  const stage = pipeline?.computed_stage ?? "imported";
+  const color = stageColor(stage);
+
+  if (loading) {
+    return (
+      <section className="ld-summary-card">
+        <div className="ld-summary-top">
+          <div className="ld-avatar ld-avatar-skeleton" />
+          <div className="ld-summary-info">
+            <div className="ld-skeleton-line" style={{ width: "60%", height: 20 }} />
+            <div className="ld-skeleton-line" style={{ width: "40%", height: 14, marginTop: 8 }} />
+            <div className="ld-skeleton-line" style={{ width: "50%", height: 12, marginTop: 6 }} />
           </div>
         </div>
-      ) : lead ? (
-        <>
-          <div className="lead-profile-header">
-            <div className="lead-profile-avatar" aria-hidden>
-              {initials(lead.name, lead.company)}
-            </div>
-            <div className="lead-profile-info">
-              <h2 className="lead-profile-name">{lead.name || "—"}</h2>
-              <div className="lead-profile-company">{lead.company || "—"}</div>
-              <div className="lead-profile-meta">
-                {lead.industry && <span>{lead.industry}</span>}
-                {lead.location && <span> · {lead.location}</span>}
-                {lead.source && <span> · {lead.source}</span>}
-              </div>
-            </div>
-            <div className="lead-profile-stage">
-              <span className="lead-profile-stage-label">Stage</span>
-              <span className="lead-profile-stage-value">{stageLabel(stage)}</span>
-            </div>
-          </div>
-          <div className="lead-profile-details">
-            <div className="lead-profile-section">
-              <h3 className="lead-profile-section-title">Contact</h3>
-              <div className="lead-profile-fields">
-                {lead.website_url && (
-                  <div className="lead-profile-field">
-                    <span className="lead-profile-field-label">Website</span>
-                    <a className="external-link" href={lead.website_url} target="_blank" rel="noreferrer">
-                      {lead.website_url}
-                    </a>
-                  </div>
-                )}
-                {lead.email && (
-                  <div className="lead-profile-field">
-                    <span className="lead-profile-field-label">Email</span>
-                    <a href={`mailto:${lead.email}`}>{lead.email}</a>
-                  </div>
-                )}
-                {lead.phone && (
-                  <div className="lead-profile-field">
-                    <span className="lead-profile-field-label">Phone</span>
-                    <a href={`tel:${lead.phone}`}>{lead.phone}</a>
-                  </div>
-                )}
-                {!lead.website_url && !lead.email && !lead.phone && (
-                  <span className="muted">No contact info</span>
-                )}
-              </div>
-            </div>
-            <div className="lead-profile-section">
-              <h3 className="lead-profile-section-title">Details</h3>
-              <div className="lead-profile-fields">
-                <div className="lead-profile-field">
-                  <span className="lead-profile-field-label">Source</span>
-                  <span>{lead.source || "—"}</span>
-                </div>
-                <div className="lead-profile-field">
-                  <span className="lead-profile-field-label">Created</span>
-                  <span>{toLocalDate(lead.created_at)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      ) : (
+      </section>
+    );
+  }
+
+  if (!lead) {
+    return (
+      <section className="ld-summary-card">
         <div className="muted" style={{ padding: 24 }}>Lead not found.</div>
-      )}
+      </section>
+    );
+  }
+
+  return (
+    <section className="ld-summary-card">
+      {/* Top row: avatar + info + stage */}
+      <div className="ld-summary-top">
+        <div className="ld-avatar" aria-hidden>{initials(lead.name, lead.company)}</div>
+
+        <div className="ld-summary-info">
+          <h2 className="ld-company">{lead.company || lead.name}</h2>
+          {lead.company && lead.name && lead.name !== lead.company && (
+            <div className="ld-contact-name">{lead.name}{lead.title ? ` · ${lead.title}` : ""}</div>
+          )}
+          <div className="ld-meta-row">
+            {lead.industry && <span className="ld-meta-chip">{lead.industry}</span>}
+            {lead.location && <span className="ld-meta-chip">{lead.location}</span>}
+            {lead.source && <span className="ld-meta-chip ld-meta-chip-muted">{lead.source}</span>}
+          </div>
+        </div>
+
+        <div className="ld-summary-right">
+          <span className={`ld-stage-badge ld-stage-${color}`}>{stageLabel(stage)}</span>
+          <div className="ld-dates">
+            <div className="ld-date-item">
+              <span className="ld-date-label">Created</span>
+              <span className="ld-date-value">{toDate(lead.created_at)}</span>
+            </div>
+            <div className="ld-date-item">
+              <span className="ld-date-label">Updated</span>
+              <span className="ld-date-value">{toRelative(lead.updated_at)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Contact details row */}
+      <div className="ld-contact-row">
+        {lead.website_url && (
+          <a href={lead.website_url} target="_blank" rel="noreferrer" className="ld-contact-item">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <span>{lead.website_url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</span>
+          </a>
+        )}
+        {lead.email && (
+          <a href={`mailto:${lead.email}`} className="ld-contact-item">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+            <span>{lead.email}</span>
+          </a>
+        )}
+        {lead.phone && (
+          <a href={`tel:${lead.phone}`} className="ld-contact-item">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            <span>{lead.phone}</span>
+          </a>
+        )}
+      </div>
+
+      {/* Quick stats */}
+      <div className="ld-quick-stats">
+        <div className="ld-stat">
+          <span className="ld-stat-value">{hasSnapshot ? "Yes" : "—"}</span>
+          <span className="ld-stat-label">Ingested</span>
+        </div>
+        <div className="ld-stat">
+          <span className="ld-stat-value">{pipeline?.has_agent1_output ? "Yes" : "—"}</span>
+          <span className="ld-stat-label">Researched</span>
+        </div>
+        <div className="ld-stat">
+          <span className="ld-stat-value">{draftsCount || "—"}</span>
+          <span className="ld-stat-label">Drafts</span>
+        </div>
+        <div className="ld-stat">
+          <span className="ld-stat-value">{pipeline?.has_agent3_verdict ? (pipeline.final_decision === "send" ? "Approved" : "Hold") : "—"}</span>
+          <span className="ld-stat-label">Verdict</span>
+        </div>
+      </div>
     </section>
   );
 }

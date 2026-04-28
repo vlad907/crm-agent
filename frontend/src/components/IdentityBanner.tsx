@@ -2,9 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { getApiBase } from "@/src/lib/api";
 import { IDENTITY_UPDATED_EVENT, getUserId, getWorkspaceId } from "@/src/lib/identity";
-
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
 
 function shortId(value: string): string {
   if (!value) return "not set";
@@ -44,7 +43,7 @@ export function IdentityBanner() {
         return;
       }
       try {
-        const response = await fetch(`${API_BASE}/api/v1/me`, {
+        const response = await fetch(`${getApiBase()}/api/v1/me`, {
           headers: { "X-Workspace-Id": workspaceId, "X-User-Id": userId },
           cache: "no-store",
         });

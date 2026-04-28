@@ -68,6 +68,7 @@ def discover_and_analyze(
         extracted_signals={
             "company_summary": result.get("company_summary"),
             "reasons": result.get("reasons", []),
+            "crawled_text": combined_text[:50000] if combined_text else None,
         },
         recommended_outreach_angle=result.get("recommended_outreach_angle"),
         contact_emails=contact_emails if contact_emails else None,
@@ -174,6 +175,7 @@ def search_and_discover(
                     "reasons": result.get("reasons", []),
                     "search_description": company.get("description"),
                     "search_relevance": company.get("relevance_reason"),
+                    "crawled_text": combined_text[:50000] if combined_text else None,
                 },
                 recommended_outreach_angle=result.get("recommended_outreach_angle"),
                 contact_emails=contact_emails if contact_emails else None,

@@ -25,7 +25,7 @@ services:
       GMAIL_OAUTH_REDIRECT_URI: ${GMAIL_OAUTH_REDIRECT_URI:-http://localhost:8000/api/v1/integrations/gmail/callback}
       GMAIL_OAUTH_SCOPES: ${GMAIL_OAUTH_SCOPES:-https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify}
       OAUTH_STATE_SIGNING_SECRET: ${OAUTH_STATE_SIGNING_SECRET:-dev-oauth-state-secret}
-      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3080}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       DEFAULT_WORKSPACE_ID: ${DEFAULT_WORKSPACE_ID:-}
       DEFAULT_USER_ID: ${DEFAULT_USER_ID:-}
@@ -39,9 +39,13 @@ services:
     depends_on:
       - backend
     environment:
-      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8000}
+      # Browser uses same-origin /api/v1 → Next proxy; target must be the backend service from inside this container.
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-}
+      CRM_API_PROXY_TARGET: ${CRM_API_PROXY_TARGET:-http://backend:8000}
+      CRM_API_URL: ${CRM_API_URL:-http://backend:8000}
     ports:
-      - "3000:3000"
+      # Use a high host port to avoid clashing with local Next/Electron on 3000–3010.
+      - "${FRONTEND_HOST_PORT:-3080}:3000"
 
 volumes:
   postgres_data:

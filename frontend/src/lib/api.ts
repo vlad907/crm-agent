@@ -37,7 +37,42 @@ import {
 } from "@/src/lib/types";
 import { getUserId, getWorkspaceId } from "@/src/lib/identity";
 
-export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
+const trimBase = (value: string) => value.trim().replace(/\/$/, "");
+
+declare global {
+  interface Window {
+    crmDesktop?: { isElectron?: boolean };
+  }
+}
+
+/**
+ * Base URL for API requests. In the browser, empty string means same-origin (Next.js rewrites to FastAPI).
+ * Electron always uses same-origin so dynamic UI ports never hit CORS.
+ * On the server, falls back to CRM_API_URL or localhost so SSR can reach the backend directly.
+ */
+export function getApiBase(): string {
+  const fromEnv = trimBase(process.env.NEXT_PUBLIC_API_BASE ?? "");
+  if (typeof window !== "undefined") {
+    if (window.crmDesktop?.isElectron) {
+      return "";
+    }
+    return fromEnv;
+  }
+  const serverFallback = trimBase(process.env.CRM_API_URL ?? "http://127.0.0.1:8000");
+  return fromEnv || serverFallback;
+}
+
+/** Human-readable base for dev settings (shows rewrite hint when using Next proxy). */
+export function getApiBaseForDisplay(): string {
+  const fromEnv = trimBase(process.env.NEXT_PUBLIC_API_BASE ?? "");
+  if (typeof window !== "undefined") {
+    if (window.crmDesktop?.isElectron || !fromEnv) {
+      return `${window.location.origin} (/api/v1/* → Next.js proxy)`;
+    }
+    return fromEnv;
+  }
+  return fromEnv || trimBase(process.env.CRM_API_URL ?? "http://127.0.0.1:8000");
+}
 
 export class ApiError extends Error {
   status: number;
@@ -75,7 +110,7 @@ export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T>
     headers.set("X-User-Id", userId);
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${getApiBase()}${path}`, {
     ...fetchInit,
     headers,
     cache: "no-store"
