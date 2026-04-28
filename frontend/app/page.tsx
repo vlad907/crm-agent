@@ -254,6 +254,29 @@ export default function LeadsPage() {
     }
   }
 
+  async function runRerun(leadId: string): Promise<void> {
+    if (isBulkRunning) {
+      return;
+    }
+    const lead = leads.find((item) => item.id === leadId);
+    if (!lead) {
+      return;
+    }
+    setRowActionState((prev) => ({ ...prev, [leadId]: { ingest: false, runAi: true } }));
+    setError(null);
+    setActionMessage(null);
+    try {
+      await executeAction(leadId, "agent2");
+      await executeAction(leadId, "agent3");
+      setActionMessage(`Re-ran Agent 2 and Agent 3 for ${lead.company || "lead"}.`);
+      await fetchRows(offset, statusFilter, searchFilter);
+    } catch (actionError) {
+      setError(getErrorMessage(actionError));
+    } finally {
+      setRowActionState((prev) => ({ ...prev, [leadId]: { ingest: false, runAi: false } }));
+    }
+  }
+
   async function runNextAiStep(leadId: string): Promise<void> {
     if (isBulkRunning) {
       return;
@@ -478,7 +501,7 @@ export default function LeadsPage() {
 
       <div className="card surface-table stack">
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <h2>Lead List</h2>
+          <h2 className="section-title" style={{ marginBottom: 0 }}>Lead List</h2>
           <button type="button" className="btn-secondary" disabled={visibleLeads.length === 0 || isBulkRunning} onClick={toggleSelectAllVisible}>
             {allVisibleSelected ? "Unselect All Visible" : "Select All Visible"}
           </button>
@@ -536,6 +559,7 @@ export default function LeadsPage() {
           onSelectLead={(id) => router.push(`/leads/${id}`)}
           onIngestLead={(id) => void runIngest(id)}
           onRunAiLead={(id) => void runNextAiStep(id)}
+          onRerunLead={(id) => void runRerun(id)}
         />
         <LeadListPagination
           canGoPrev={canGoPrev}

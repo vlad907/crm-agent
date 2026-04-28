@@ -19,6 +19,13 @@ interface LeadListTableProps {
   onSelectLead: (id: string) => void;
   onIngestLead: (id: string) => void;
   onRunAiLead: (id: string) => void;
+  onRerunLead: (id: string) => void;
+}
+
+const RERUNNABLE_STAGES = new Set(["needs_review", "approved", "archived"]);
+
+function isRerunnable(stage: string): boolean {
+  return RERUNNABLE_STAGES.has(stage);
 }
 
 function toLocalDate(value?: string): string {
@@ -74,7 +81,8 @@ export function LeadListTable({
   onToggleSelectAllVisible,
   onSelectLead,
   onIngestLead,
-  onRunAiLead
+  onRunAiLead,
+  onRerunLead
 }: LeadListTableProps) {
   const [sortColumn, setSortColumn] = useState<SortColumn>("updated_at");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -150,9 +158,12 @@ export function LeadListTable({
             sortedLeads.map((lead) => {
               const rowState = rowActionState[lead.id] ?? { ingest: false, runAi: false };
               const summary = resolveLeadPipeline(lead);
+              const stage = summary.computed_stage;
+              const rerunnable = isRerunnable(stage);
               const runAiDisabledReason = getRunAiDisabledReason(lead);
               const runAiDisabled = bulkRunning || rowState.ingest || rowState.runAi || !!runAiDisabledReason;
               const ingestDisabled = bulkRunning || rowState.ingest || rowState.runAi || !lead.website_url;
+              const rerunDisabled = bulkRunning || rowState.ingest || rowState.runAi;
 
               return (
                 <tr key={lead.id} className="clickable-row" onClick={() => onSelectLead(lead.id)}>
@@ -210,15 +221,27 @@ export function LeadListTable({
                       >
                         {rowState.ingest ? <Spinner size="sm" label="Ingesting" /> : "Ingest"}
                       </button>
-                      <button
-                        type="button"
-                        className="action-btn action-btn-primary"
-                        title={runAiDisabledReason ?? "Run next missing AI step"}
-                        disabled={runAiDisabled}
-                        onClick={() => onRunAiLead(lead.id)}
-                      >
-                        {rowState.runAi ? <Spinner size="sm" label="Running" /> : "Run AI"}
-                      </button>
+                      {rerunnable ? (
+                        <button
+                          type="button"
+                          className="action-btn action-btn-primary"
+                          title="Re-generate draft (Agent 2) and re-verify (Agent 3)"
+                          disabled={rerunDisabled}
+                          onClick={() => onRerunLead(lead.id)}
+                        >
+                          {rowState.runAi ? <Spinner size="sm" label="Re-running" /> : "Re-run"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="action-btn action-btn-primary"
+                          title={runAiDisabledReason ?? "Run next missing AI step"}
+                          disabled={runAiDisabled}
+                          onClick={() => onRunAiLead(lead.id)}
+                        >
+                          {rowState.runAi ? <Spinner size="sm" label="Running" /> : "Run AI"}
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="action-btn"
