@@ -19,3 +19,6 @@ backend/crm.db-wal
 backend/crm_test.db
 backend/crm_test.db-shm
 backend/crm_test.db-wal
+
+# Codex environment config (local IDE/agent state)
+.codex/
