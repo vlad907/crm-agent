@@ -19,7 +19,7 @@ import {
   runAgent3
 } from "@/src/lib/api";
 import { resolveLeadPipeline } from "@/src/lib/leadPipeline";
-import { Draft, Lead, LatestContext as LatestContextType, WebsitePage } from "@/src/lib/types";
+import { Draft, Lead, LatestContext as LatestContextType, PartnershipContext, WebsitePage } from "@/src/lib/types";
 
 type ActionKey = "ingest" | "agent1" | "agent2" | "agent3" | "refresh";
 type StageState = "done" | "active" | "pending";
@@ -40,6 +40,52 @@ function timeAgo(date: string): string {
   const days = Math.floor(hrs / 24);
   if (days < 30) return `${days}d ago`;
   return new Date(date).toLocaleDateString();
+}
+
+function PartnershipContextPanel({ ctx }: { ctx: PartnershipContext }) {
+  return (
+    <div className="card" style={{ borderLeft: "4px solid var(--accent-purple, #7c3aed)" }}>
+      <h3 className="ld-section-title" style={{ color: "var(--accent-purple, #7c3aed)", marginBottom: 12 }}>
+        Partnership Context
+      </h3>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 24px", marginBottom: 12 }}>
+        {ctx.fit_score != null && (
+          <div>
+            <span style={{ fontSize: ".75rem", fontWeight: 600, color: "var(--text-secondary)" }}>Fit Score</span>
+            <div style={{ fontWeight: 700, fontSize: "1.1rem", color: ctx.fit_score >= 0.7 ? "var(--green)" : ctx.fit_score >= 0.4 ? "var(--amber)" : "var(--red)" }}>
+              {Math.round(ctx.fit_score * 100)}%
+            </div>
+          </div>
+        )}
+        {ctx.partnership_type && (
+          <div>
+            <span style={{ fontSize: ".75rem", fontWeight: 600, color: "var(--text-secondary)" }}>Partnership Type</span>
+            <div style={{ fontWeight: 600, textTransform: "capitalize" }}>{ctx.partnership_type.replace(/_/g, " ")}</div>
+          </div>
+        )}
+      </div>
+      {ctx.company_summary && (
+        <div style={{ marginBottom: 10 }}>
+          <span style={{ fontSize: ".75rem", fontWeight: 600, color: "var(--text-secondary)" }}>About Them</span>
+          <p style={{ margin: "4px 0 0", fontSize: ".88rem" }}>{ctx.company_summary}</p>
+        </div>
+      )}
+      {ctx.recommended_outreach_angle && (
+        <div style={{ marginBottom: 10 }}>
+          <span style={{ fontSize: ".75rem", fontWeight: 600, color: "var(--text-secondary)" }}>Recommended Outreach Angle</span>
+          <p style={{ margin: "4px 0 0", fontSize: ".88rem", fontStyle: "italic" }}>{ctx.recommended_outreach_angle}</p>
+        </div>
+      )}
+      {Array.isArray(ctx.reasons) && ctx.reasons.length > 0 && (
+        <div>
+          <span style={{ fontSize: ".75rem", fontWeight: 600, color: "var(--text-secondary)" }}>Fit Reasons</span>
+          <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: ".86rem" }}>
+            {ctx.reasons.map((r, i) => <li key={i}>{r}</li>)}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function LeadDetailPage() {
@@ -217,6 +263,10 @@ export default function LeadDetailPage() {
             draftsCount={drafts.length}
             hasSnapshot={!!context?.snapshot}
           />
+
+          {lead?.lead_type === "partnership" && lead.partnership_context && (
+            <PartnershipContextPanel ctx={lead.partnership_context as PartnershipContext} />
+          )}
 
           <PipelineActionsCard
             isBusy={isBusy}

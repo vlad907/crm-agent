@@ -59,10 +59,11 @@ from app.services.openai_client import (
     OpenAIRateLimitError,
     run_agent1,
     run_agent2,
+    run_agent2_with_claude,
 )
 from app.services.scrape import WebsiteFetchError
 from app.services.website_ingestion import ingest_website_pages
-from app.services.workspace_credentials import resolve_openai_api_key
+from app.services.workspace_credentials import resolve_email_generation_provider, resolve_openai_api_key
 from app.services.workspace_ai_strategy import build_strategy_context, ensure_workspace_strategy_generated
 
 router = APIRouter(prefix="/leads", tags=["Leads"])
@@ -271,6 +272,8 @@ def list_leads(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     status_filter: str | None = Query(default=None, alias="status"),
+    exclude_status: str | None = Query(default=None, alias="exclude_status"),
+    lead_type_filter: str | None = Query(default=None, alias="lead_type"),
     query: str | None = Query(default=None, alias="q", min_length=1),
 ) -> LeadListResponse:
     filters = [Lead.workspace_id == ctx.workspace_id]
@@ -283,6 +286,12 @@ def list_leads(
                 detail=f"Invalid status filter '{status_filter}'.",
             )
         filters.append(Lead.status == normalized_status)
+    if exclude_status:
+        normalized_exclude = normalize_lead_status(exclude_status, fallback=None)
+        if normalized_exclude and normalized_exclude in LEAD_STATUS_SET:
+            filters.append(Lead.status != normalized_exclude)
+    if lead_type_filter and lead_type_filter in ("local_business", "partnership"):
+        filters.append(Lead.lead_type == lead_type_filter)
     if query:
         filters.append(Lead.company.ilike(f"%{query}%"))
 
@@ -302,6 +311,20 @@ def bulk_delete_leads(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_request_context),
 ) -> LeadBulkDeleteResponse:
+    # Look up the leads being deleted *first* so we can release their source
+    # prospects / partner candidates back to a re-importable state. Without
+    # this, a lead that was originally converted from a prospect stays linked
+    # in Prospect.import_status='imported' forever — meaning even after the
+    # lead is gone, the user can't re-convert that prospect.
+    leads_to_delete = db.scalars(
+        select(Lead).where(
+            Lead.workspace_id == ctx.workspace_id,
+            Lead.id.in_(payload.lead_ids),
+        )
+    ).all()
+
+    _release_source_records_for_deleted_leads(db, ctx.workspace_id, leads_to_delete)
+
     stmt = delete(Lead).where(
         Lead.workspace_id == ctx.workspace_id,
         Lead.id.in_(payload.lead_ids),
@@ -309,6 +332,77 @@ def bulk_delete_leads(
     result = db.execute(stmt)
     db.commit()
     return LeadBulkDeleteResponse(deleted_count=result.rowcount or 0)
+
+
+def _release_source_records_for_deleted_leads(
+    db: Session,
+    workspace_id: UUID,
+    leads: list[Lead],
+) -> None:
+    """Reset `import_status` / `status` on prospects and partner candidates that
+    were the source of the leads being deleted.
+
+    There is no FK between Lead and Prospect/PartnerCandidate, so we match
+    heuristically by normalized website_url first, then by lower-cased
+    company name. This mirrors the dedupe logic used during conversion.
+    """
+    if not leads:
+        return
+
+    from app.models.partner_candidate import PartnerCandidate
+    from app.models.prospect import Prospect
+    from app.services.lead_import import normalize_website_url
+
+    websites: set[str] = set()
+    companies: set[str] = set()
+    for lead in leads:
+        normalized = normalize_website_url(lead.website_url) if lead.website_url else None
+        if normalized:
+            websites.add(normalized.lower())
+        if lead.company:
+            companies.add(lead.company.strip().lower())
+
+    if websites:
+        prospects_by_url = db.scalars(
+            select(Prospect).where(
+                Prospect.workspace_id == workspace_id,
+                Prospect.import_status == "imported",
+                func.lower(Prospect.website_url).in_(websites),
+            )
+        ).all()
+        for prospect in prospects_by_url:
+            prospect.import_status = "selected"
+
+        partners_by_url = db.scalars(
+            select(PartnerCandidate).where(
+                PartnerCandidate.workspace_id == workspace_id,
+                PartnerCandidate.status == "converted",
+                func.lower(PartnerCandidate.website).in_(websites),
+            )
+        ).all()
+        for partner in partners_by_url:
+            partner.status = "discovered"
+
+    if companies:
+        prospects_by_company = db.scalars(
+            select(Prospect).where(
+                Prospect.workspace_id == workspace_id,
+                Prospect.import_status == "imported",
+                func.lower(Prospect.company_name).in_(companies),
+            )
+        ).all()
+        for prospect in prospects_by_company:
+            prospect.import_status = "selected"
+
+        partners_by_company = db.scalars(
+            select(PartnerCandidate).where(
+                PartnerCandidate.workspace_id == workspace_id,
+                PartnerCandidate.status == "converted",
+                func.lower(PartnerCandidate.company_name).in_(companies),
+            )
+        ).all()
+        for partner in partners_by_company:
+            partner.status = "discovered"
 
 
 @router.get("/{lead_id}", response_model=LeadRead)
@@ -550,44 +644,66 @@ def run_agent2_for_lead(
         latest_agent1_draft.id,
     )
 
-    openai_api_key, key_source = resolve_openai_api_key(db=db, workspace_id=ctx.workspace_id)
+    email_provider, email_api_key = resolve_email_generation_provider(db=db, workspace_id=ctx.workspace_id)
+    if not email_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No AI API key configured. Add an Anthropic or OpenAI key in Settings.",
+        )
     logger.info(
-        "Agent2 OpenAI key resolution workspace_id=%s lead_id=%s key_source=%s",
+        "Agent2 provider resolution workspace_id=%s lead_id=%s provider=%s",
         ctx.workspace_id,
         lead_id,
-        key_source,
+        email_provider,
     )
 
-    logger.info("Agent2 run start lead_id=%s snapshot_id=%s", lead_id, latest_snapshot.id)
+    logger.info("Agent2 run start lead_id=%s snapshot_id=%s provider=%s", lead_id, latest_snapshot.id, email_provider)
     lead.status = LEAD_STATUS_DRAFTING
     db.commit()
     db.refresh(lead)
 
+    openai_api_key_for_strategy, _ = resolve_openai_api_key(db=db, workspace_id=ctx.workspace_id)
     strategy = ensure_workspace_strategy_generated(
         db=db,
         workspace_id=ctx.workspace_id,
-        api_key=openai_api_key,
+        api_key=openai_api_key_for_strategy,
     )
     strategy_context = build_strategy_context(strategy, lead_category=lead.industry)
     from app.services.sender_signature import get_sender_info, replace_placeholders
     sender_info = get_sender_info(db, ctx.workspace_id)
 
     try:
-        agent2_output = run_agent2(
-            lead_name=lead.name,
-            company=lead.company,
-            website_url=lead.website_url,
-            snapshot_text=latest_snapshot.raw_text,
-            agent1_output=latest_agent1_draft.agent1_output,
-            strategy_context=strategy_context,
-            sender_info=sender_info,
-            api_key=openai_api_key,
-        )
+        if email_provider == "anthropic":
+            agent2_output = run_agent2_with_claude(
+                lead_name=lead.name,
+                company=lead.company,
+                website_url=lead.website_url,
+                snapshot_text=latest_snapshot.raw_text,
+                agent1_output=latest_agent1_draft.agent1_output,
+                strategy_context=strategy_context,
+                sender_info=sender_info,
+                api_key=email_api_key,
+                lead_type=lead.lead_type or "local_business",
+                partnership_context=lead.partnership_context,
+            )
+        else:
+            agent2_output = run_agent2(
+                lead_name=lead.name,
+                company=lead.company,
+                website_url=lead.website_url,
+                snapshot_text=latest_snapshot.raw_text,
+                agent1_output=latest_agent1_draft.agent1_output,
+                strategy_context=strategy_context,
+                sender_info=sender_info,
+                api_key=email_api_key,
+                lead_type=lead.lead_type or "local_business",
+                partnership_context=lead.partnership_context,
+            )
     except OpenAIConfigurationError as exc:
         logger.warning("Agent2 configuration error workspace_id=%s lead_id=%s error=%s", ctx.workspace_id, lead_id, exc)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OpenAI API key is missing. Configure workspace settings at /api/v1/settings or set OPENAI_API_KEY.",
+            detail="AI API key is missing or invalid. Configure workspace settings.",
         ) from exc
     except OpenAIRateLimitError as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=f"Agent2 failed: {exc}") from exc

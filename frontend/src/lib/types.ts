@@ -23,6 +23,17 @@ export interface LeadPipelineSummary {
   computed_stage: LeadStatus | string;
 }
 
+export type LeadType = "local_business" | "partnership";
+
+export interface PartnershipContext {
+  fit_score?: number | null;
+  partnership_type?: string | null;
+  reasons?: string[];
+  company_summary?: string | null;
+  recommended_outreach_angle?: string | null;
+  [key: string]: unknown;
+}
+
 export interface Lead {
   id: string;
   name: string;
@@ -35,6 +46,8 @@ export interface Lead {
   location?: string | null;
   industry?: string | null;
   title?: string | null;
+  lead_type?: LeadType | string | null;
+  partnership_context?: PartnershipContext | null;
   created_at?: string;
   updated_at?: string;
   pipeline_summary?: LeadPipelineSummary | null;
@@ -309,22 +322,30 @@ export interface ConvertProspectsResponse {
 export interface WorkspaceSettings {
   workspace_id: string;
   openai_api_key?: string | null;
+  anthropic_api_key?: string | null;
+  preferred_ai_provider?: string | null;
   google_places_api_key?: string | null;
   google_oauth_client_id?: string | null;
   google_oauth_client_secret?: string | null;
   gmail_oauth_redirect_uri?: string | null;
   gmail_connected?: boolean;
+  gmail_send_as_email?: string | null;
+  gmail_send_as_display_name?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }
 
 export interface WorkspaceSettingsUpdate {
   openai_api_key?: string | null;
+  anthropic_api_key?: string | null;
+  preferred_ai_provider?: string | null;
   google_places_api_key?: string | null;
   google_oauth_client_id?: string | null;
   google_oauth_client_secret?: string | null;
   gmail_oauth_redirect_uri?: string | null;
   gmail_connected?: boolean | null;
+  gmail_send_as_email?: string | null;
+  gmail_send_as_display_name?: string | null;
 }
 
 export type AutomationMode = "manual" | "semi_auto" | "auto_draft" | "auto_send";
@@ -359,6 +380,18 @@ export interface GmailStatusResponse {
   connected_email?: string | null;
   integration_status: string;
   last_error?: string | null;
+}
+
+export interface SendAsAlias {
+  send_as_email: string;
+  display_name?: string | null;
+  is_default: boolean;
+  is_primary: boolean;
+  verification_status?: string | null;
+}
+
+export interface GmailSendAsAliasesResponse {
+  aliases: SendAsAlias[];
 }
 
 export interface DraftReviewQueueItem {

@@ -23,11 +23,21 @@ export const metadata: Metadata = {
   description: "Lead pipeline control center"
 };
 
-/** Inline fallback so Electron / failed CSS still shows a visible shell (not a blank white window). */
+/** Inline fallback so Electron / failed CSS still shows a visible shell (not a blank white window).
+ *
+ * IMPORTANT: do not declare `:root { --bg: ... }` or any body background color here.
+ * In Next.js's app router, this <style dangerouslySetInnerHTML> tag is rendered AFTER
+ * the imported globals.css <link> in the HTML <head>. Because `:root` and
+ * `[data-theme="dark"]` have equal CSS specificity, the LAST occurrence wins — so any
+ * `:root { --bg: <light> }` we put here would defeat the [data-theme="dark"] override
+ * from globals.css and silently break dark mode. Instead we use `var(--bg, <fallback>)`
+ * — when globals.css loads, --bg is defined (and respects the data-theme override);
+ * when globals.css fails entirely, the fallback color kicks in.
+ */
 const CRITICAL_FALLBACK_CSS = `
 html,body{min-height:100%;margin:0}
-body{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#0f172a}
-.app-shell-loading{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f1f5f9}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg,#f1f5f9);color:var(--text,#0f172a)}
+.app-shell-loading{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg,#f1f5f9)}
 .app-shell-spinner{width:32px;height:32px;border:3px solid #e2e8f0;border-top-color:#3b82f6;border-radius:50%;animation:crmSpin .75s linear infinite}
 @keyframes crmSpin{to{transform:rotate(360deg)}}
 .login-page-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(160deg,#0f172a,#1e293b)}

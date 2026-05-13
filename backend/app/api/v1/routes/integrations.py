@@ -12,7 +12,13 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.workspace import Workspace
 from app.models.workspace_setting import WorkspaceSetting
-from app.schemas.gmail_integration import GmailCallbackResponse, GmailConnectUrlResponse, GmailStatusResponse
+from app.schemas.gmail_integration import (
+    GmailCallbackResponse,
+    GmailConnectUrlResponse,
+    GmailSendAsAliasesResponse,
+    GmailStatusResponse,
+    SendAsAlias,
+)
 from app.services.gmail_service import (
     GmailApiError,
     GmailConfigurationError,
@@ -22,7 +28,9 @@ from app.services.gmail_service import (
     attach_gmail_profile,
     build_gmail_connect_url,
     decode_oauth_state,
+    disconnect_gmail,
     exchange_code_for_tokens,
+    fetch_send_as_aliases,
     get_gmail_connection_status,
     save_oauth_tokens,
     set_gmail_integration_error,
@@ -172,3 +180,44 @@ def gmail_oauth_callback(
             last_error=None,
         )
     return _frontend_automation_redirect(oauth_status="success", message=connected_email or "Gmail connected")
+
+
+@router.get("/gmail/send-as-aliases", response_model=GmailSendAsAliasesResponse)
+def get_gmail_send_as_aliases(
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
+) -> GmailSendAsAliasesResponse:
+    _require_workspace_exists(db, ctx.workspace_id)
+    try:
+        raw_aliases = fetch_send_as_aliases(db, ctx.workspace_id)
+    except GmailApiError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    aliases = [
+        SendAsAlias(
+            send_as_email=a.get("sendAsEmail", ""),
+            display_name=a.get("displayName") or None,
+            is_default=bool(a.get("isDefault", False)),
+            is_primary=bool(a.get("isPrimary", False)),
+            verification_status=a.get("verificationStatus") or None,
+        )
+        for a in raw_aliases
+        if a.get("sendAsEmail")
+    ]
+    return GmailSendAsAliasesResponse(aliases=aliases)
+
+
+@router.post("/gmail/disconnect", response_model=GmailStatusResponse)
+def gmail_disconnect(
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_request_context),
+) -> GmailStatusResponse:
+    _require_workspace_exists(db, ctx.workspace_id)
+    disconnect_gmail(db, ctx.workspace_id)
+    db.commit()
+    return GmailStatusResponse(
+        workspace_id=str(ctx.workspace_id),
+        connected=False,
+        connected_email=None,
+        integration_status="disconnected",
+        last_error=None,
+    )

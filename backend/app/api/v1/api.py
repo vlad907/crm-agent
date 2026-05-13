@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.routes.admin import router as admin_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.automation_settings import router as automation_settings_router
 from app.api.v1.routes.draft_actions import router as draft_actions_router
@@ -20,6 +21,7 @@ from app.api.v1.routes.workspace_ai_strategy import router as workspace_ai_strat
 from app.api.v1.routes.workspace_profile import router as workspace_profile_router
 
 api_router = APIRouter()
+api_router.include_router(admin_router)
 api_router.include_router(auth_router)
 api_router.include_router(me_router)
 api_router.include_router(settings_router)

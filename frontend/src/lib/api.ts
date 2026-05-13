@@ -12,6 +12,7 @@ import {
   DraftReviewUpdateResponse,
   GmailConnectUrlResponse,
   GmailDraftActionResponse,
+  GmailSendAsAliasesResponse,
   GmailSendResponse,
   GmailStatusResponse,
   Lead,
@@ -136,21 +137,27 @@ function tryParseJson(value: string): unknown {
   }
 }
 
-function buildLeadsQuery(limit: number, offset: number, status?: string, q?: string): string {
+function buildLeadsQuery(limit: number, offset: number, status?: string, q?: string, leadType?: string, excludeStatus?: string): string {
   const params = new URLSearchParams();
   params.set("limit", String(limit));
   params.set("offset", String(offset));
   if (status) {
     params.set("status", status);
   }
+  if (excludeStatus) {
+    params.set("exclude_status", excludeStatus);
+  }
   if (q) {
     params.set("q", q);
+  }
+  if (leadType && leadType !== "all") {
+    params.set("lead_type", leadType);
   }
   return params.toString();
 }
 
-export function getLeads(limit: number, offset: number, status?: string, q?: string): Promise<LeadListResponse> {
-  const query = buildLeadsQuery(limit, offset, status, q);
+export function getLeads(limit: number, offset: number, status?: string, q?: string, leadType?: string, excludeStatus?: string): Promise<LeadListResponse> {
+  const query = buildLeadsQuery(limit, offset, status, q, leadType, excludeStatus);
   return apiFetch<LeadListResponse>(`/api/v1/leads?${query}`);
 }
 
@@ -273,6 +280,14 @@ export function getGmailConnectUrl(): Promise<GmailConnectUrlResponse> {
 
 export function getGmailStatus(): Promise<GmailStatusResponse> {
   return apiFetch<GmailStatusResponse>("/api/v1/integrations/gmail/status");
+}
+
+export function getGmailSendAsAliases(): Promise<GmailSendAsAliasesResponse> {
+  return apiFetch<GmailSendAsAliasesResponse>("/api/v1/integrations/gmail/send-as-aliases");
+}
+
+export function disconnectGmail(): Promise<GmailStatusResponse> {
+  return apiFetch<GmailStatusResponse>("/api/v1/integrations/gmail/disconnect", { method: "POST" });
 }
 
 export function getWorkspaceProfile(): Promise<WorkspaceProfile> {
@@ -558,4 +573,33 @@ export function createJob(payload: Record<string, unknown>): Promise<Job> {
 
 export function updateJob(jobId: string, payload: Record<string, unknown>): Promise<Job> {
   return apiFetch<Job>(`/api/v1/jobs/${jobId}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+/* ─── Admin / Database ─── */
+
+export function getDbExportUrl(): string {
+  return `${getApiBase()}/api/v1/admin/db/export`;
+}
+
+export async function importDatabase(file: File): Promise<{ status: string; message: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  // Build identity headers manually — don't set Content-Type so the browser
+  // can attach the multipart boundary automatically for FormData.
+  const headers = new Headers();
+  const workspaceId = getWorkspaceId();
+  const userId = getUserId();
+  if (workspaceId) headers.set("X-Workspace-Id", workspaceId);
+  if (userId) headers.set("X-User-Id", userId);
+  const response = await fetch(`${getApiBase()}/api/v1/admin/db/import`, {
+    method: "POST",
+    headers,
+    body: formData,
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new ApiError(err.detail ?? "Import failed", response.status);
+  }
+  return response.json();
 }

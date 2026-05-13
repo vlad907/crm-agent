@@ -1,3 +1,7 @@
 node_modules
 .next
-electron-dist
+# electron-dist is tracked (large binaries via Git LFS — see top-level .gitattributes)
+# but we ignore intermediates that don't need committing:
+electron-dist/mac-arm64/
+electron-dist/builder-debug.yml
+electron-dist/builder-effective-config.yaml

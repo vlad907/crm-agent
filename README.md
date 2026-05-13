@@ -1,120 +1,334 @@
-# CRM MVP
+# CRM Command
 
-FastAPI backend + Next.js frontend.
+A desktop CRM and AI outreach assistant. Find local businesses and partnership
+candidates, let AI research each one, draft and review emails, then send them
+through your own Gmail account — all from a single Mac/Windows/Linux app.
 
-## Multi-Tenant Model
+Built on FastAPI + Next.js + Electron. Backend, frontend, and Python venv
+are bundled into a single installable application.
 
-All CRM pipeline data is tenant-scoped by `workspace_id`:
-- `leads`
-- `website_snapshots`
-- `email_drafts`
+---
 
-New foundational tables:
-- `workspaces`
-- `users`
-- `integration_accounts`
-- `oauth_tokens`
+## Table of Contents
 
-Every API request resolves identity from:
-- `X-Workspace-Id`
-- `X-User-Id`
+1. [What it does](#what-it-does)
+2. [Install (end users)](#install-end-users)
+3. [First-time setup](#first-time-setup)
+4. [Using the app](#using-the-app)
+5. [Build from source](#build-from-source)
+6. [Publish a new release](#publish-a-new-release)
+7. [Developer notes](#developer-notes)
 
-If headers are omitted, backend uses:
-- `DEFAULT_WORKSPACE_ID`
-- `DEFAULT_USER_ID`
+---
 
-If env defaults are missing in development, startup bootstrap creates a default workspace/user and uses them as runtime defaults.
+## What it does
 
-## Environment
+- **Discovery** — find local businesses via Google Places, or partnership/vendor
+  candidates via web search, all from inside the app.
+- **AI research** — each lead is automatically researched: the AI scrapes the
+  company's website, extracts pain points, and identifies hooks for outreach.
+- **Draft & verify** — Agent 2 writes a personalized email, Agent 3 verifies it
+  against your tone/guardrails. Drafts you approve become Gmail drafts you can
+  send with one click.
+- **Inbox & threads** — incoming replies are pulled into the app, classified,
+  and given an AI-suggested response that you can review and send.
+- **Partnerships** — separate flow for finding vendor/subcontractor networks
+  where the goal is to get added to *their* dispatch list (not to sell to them).
 
-`.env.example` now includes:
+All data stays local in a SQLite file inside your user data directory; nothing
+syncs anywhere unless you explicitly connect Gmail.
 
-```bash
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_DB=crm_db
-DATABASE_URL=postgresql+psycopg2://postgres:postgres@db:5432/crm_db
-ENV=development
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=gpt-4o-mini
-OPENAI_RATE_LIMIT_RETRIES=5
-OPENAI_RATE_LIMIT_BACKOFF_SECONDS=1.0
-DEFAULT_WORKSPACE_ID=
-DEFAULT_USER_ID=
-```
+---
 
-## Backend Run
+## Install (end users)
 
-```bash
-docker compose up --build
-```
-
-## Migrations
+The latest installer is committed to the `main` branch of this repo using
+**Git LFS** (the DMG is ~171 MB). You need Git LFS installed locally to clone
+it correctly:
 
 ```bash
-docker compose exec backend alembic upgrade head
+# one-time install
+brew install git-lfs        # macOS
+# OR: sudo apt install git-lfs
+# OR: download from https://git-lfs.com
+git lfs install
+
+# clone with the installer files
+git clone git@github.com:vlad907/crm-agent.git
+cd crm-agent/frontend/electron-dist
 ```
 
-## Dev Bootstrap Flow
+If you've already cloned the repo without LFS, run `git lfs pull` from inside
+the repo to fetch the binary files.
 
-1) Start stack and run migrations.
+### macOS
 
-2) Fetch current request identity:
+1. Open `CRM Command-<version>-arm64.dmg`.
+2. Drag **CRM Command** into your `Applications` folder.
+3. First launch: macOS will block the app because it isn't notarized.
+   Right-click the app → **Open** → **Open** in the dialog.
+   (You only have to do this once.)
+
+The app stores its database at
+`~/Library/Application Support/crm-frontend/crm.db`.
+
+### Windows
+
+1. Run `CRM Command-<version>-Setup.exe`.
+2. Windows SmartScreen may warn about the unsigned binary — click **More info
+   → Run anyway**.
+
+### Linux
+
+1. `chmod +x CRM\ Command-<version>.AppImage`
+2. Run it.
+
+---
+
+## First-time setup
+
+Open the app. You'll be walked through onboarding:
+
+1. **Login / Workspace** — pick an email; a local workspace is created for you.
+2. **API keys** — paste your own keys; they're stored encrypted-at-rest in your
+   local SQLite, never sent anywhere except to the respective provider:
+   - **Anthropic API key** (recommended for email generation — better
+     instruction-following). Get one at console.anthropic.com.
+   - **OpenAI API key** (used as fallback if no Anthropic key, and for research
+     agents). Get one at platform.openai.com.
+   - **Google Places API key** (for local-business discovery). Enable both
+     **Places API** and **Geocoding API** in Google Cloud Console → APIs &
+     Services → Library.
+3. **Gmail connection** (optional but recommended) — click **Connect Gmail** to
+   grant the app permission to create drafts and send on your behalf. You'll
+   need a **Google OAuth client ID + secret** of your own (free; created in
+   Google Cloud Console → Credentials → OAuth 2.0 Client IDs).
+4. **Business profile** — name, service area, specialties, tone. This is the
+   data the AI uses to personalize every email it writes for you.
+
+Done. You can revisit any of these later under **Settings**.
+
+---
+
+## Using the app
+
+### Find leads
+
+- **Local Businesses** — Discovery → Local Businesses → enter a location, radius,
+  and category (e.g. *plumbers in Chico, CA, 25 mi*). Select what you want and
+  click **Import as leads**.
+- **Partnership candidates** — Discovery → Partnerships → describe the kind of
+  partner you want (e.g. *national MSPs that dispatch on-site IT technicians*).
+  The AI ranks each company by fit score.
+
+### Run the pipeline
+
+From the **Leads** page:
+
+- Click a row → side panel shows summary, AI research, and current draft.
+- Select rows in bulk → **Run Full Pipeline** to research + draft for everything
+  that's incomplete.
+- **Re-run Pipeline (Unapproved)** forces a fresh research+draft cycle on
+  anything that wasn't yet approved.
+
+### Review and send
+
+- Approved drafts get pushed to your Gmail Drafts folder.
+- Click **Send** in the app to dispatch immediately, or open Gmail and send
+  from there.
+- Use the **Archive** view to see converted/sent/archived leads.
+
+### Watch inbox
+
+- The app syncs your Gmail inbox in the background.
+- New replies appear under **Inbox** with an AI classification
+  (interested, objection, question, etc.) and a suggested response you can
+  approve, edit, or discard.
+
+---
+
+## Build from source
+
+You'll need:
+
+- **Node 20+** and **npm**
+- **Python 3.11+**
+- macOS / Linux: nothing else
+- Windows: build tools (`windows-build-tools` or the VS C++ workload)
 
 ```bash
-curl http://localhost:8000/api/v1/me
+git clone git@github.com:vlad907/crm-agent.git
+cd crm-agent
 ```
 
-3) Copy returned IDs into `.env`:
+### Backend venv (one-time)
+
+The Electron build bundles whatever venv lives at `backend/.venv`. Create it:
 
 ```bash
-DEFAULT_WORKSPACE_ID=<workspace_uuid>
-DEFAULT_USER_ID=<user_uuid>
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+deactivate
+cd ..
 ```
 
-4) Restart backend:
-
-```bash
-docker compose up -d --build backend
-```
-
-## Health Check
-
-```bash
-curl http://localhost:8000/health
-```
-
-## Frontend Setup
-
-Create `frontend/.env.local`:
-
-```bash
-NEXT_PUBLIC_API_BASE=http://localhost:8000
-NEXT_PUBLIC_WORKSPACE_ID=<workspace_uuid>
-NEXT_PUBLIC_USER_ID=<user_uuid>
-```
-
-Frontend sends `X-Workspace-Id` and `X-User-Id` on every request.
-You can override IDs at runtime in `Settings` (`/settings`), which stores values in browser localStorage.
-You can also use `Login` (`/login`) to sign in with email; if user does not exist yet, backend creates it and frontend stores returned workspace/user IDs.
-
-Local frontend run:
+### Frontend dependencies
 
 ```bash
 cd frontend
 npm install
-npm run dev
 ```
 
-Open `http://localhost:3000`.
+### Run in dev mode (hot reload)
 
-Docker frontend run:
+In one terminal:
 
 ```bash
-docker compose up --build frontend
+docker compose up backend       # or run uvicorn directly
 ```
 
-## Dev Login
+In another:
+
+```bash
+cd frontend
+npm run electron:dev
+```
+
+The Electron window opens, the renderer hot-reloads, and requests are proxied
+to the backend on `:8000`.
+
+### Build the desktop app
+
+```bash
+cd frontend
+npm run electron:build
+```
+
+Output is dropped in `frontend/electron-dist/`:
+
+- `CRM Command-<version>-arm64.dmg`  (macOS Apple Silicon)
+- `CRM Command-<version>-arm64-mac.zip`
+- `CRM Command-<version>-Setup.exe`  (Windows, on a Windows host)
+- `CRM Command-<version>.AppImage`   (Linux)
+
+The build script sets `CRM_API_PROXY_TARGET=http://127.0.0.1:8765` so the
+packaged app talks to its bundled backend on port 8765 (avoiding collisions
+with any dev backend on 8000).
+
+---
+
+## Publish a new build
+
+Builds are committed directly to `main` so anyone who clones the repo gets
+the latest installer alongside the source. No GitHub release page involved.
+
+### 1. Build the installer
+
+```bash
+cd frontend
+npm run electron:build
+```
+
+Artifacts land in `frontend/electron-dist/`:
+
+- `CRM Command-<version>-arm64.dmg`
+- `CRM Command-<version>-arm64-mac.zip`
+- `CRM Command-<version>.AppImage` (Linux host only)
+- `CRM Command-<version>-Setup.exe` (Windows host only)
+
+### 2. Commit the new installer to main
+
+```bash
+cd ..   # back to repo root
+git add frontend/electron-dist/"CRM Command-"*.dmg \
+        frontend/electron-dist/"CRM Command-"*-mac.zip \
+        frontend/electron-dist/"CRM Command-"*.blockmap
+git commit -m "Build v$(cd frontend && node -p 'require(\"./package.json\").version')"
+git push origin main
+```
+
+That's it — users `git pull` (or re-clone) and run the new installer.
+
+### Optional: bump the version first
+
+```bash
+cd frontend
+npm version patch    # 0.1.0 → 0.1.1, or use `minor` / `major`
+cd ..
+git push origin main
+```
+
+### Optional: code signing for macOS
+
+If you want to skip the Gatekeeper warning:
+
+1. Get an **Apple Developer ID Application** certificate ($99/yr).
+2. Set env vars before building:
+   ```bash
+   export CSC_LINK=/path/to/cert.p12
+   export CSC_KEY_PASSWORD=...
+   export APPLE_ID=...
+   export APPLE_APP_SPECIFIC_PASSWORD=...
+   export APPLE_TEAM_ID=...
+   ```
+3. `electron-builder` picks these up automatically and signs + notarizes.
+
+---
+
+## Developer notes
+
+### Architecture
+
+```
+┌────────────────────────────────────────────────────┐
+│              Electron main process                 │
+│  ┌─────────────────┐    ┌──────────────────────┐  │
+│  │ Next.js         │    │ FastAPI (uvicorn)    │  │
+│  │ standalone      │───▶│ Python 3.11 + venv   │  │
+│  │ :3000           │    │ :8765                │  │
+│  └─────────────────┘    └──────────────────────┘  │
+│           ▲                       │                │
+│           │                       ▼                │
+│      BrowserWindow         SQLite (user data dir)  │
+└────────────────────────────────────────────────────┘
+```
+
+- The Electron main process (`frontend/electron/main.cjs`) spawns:
+  - A Next.js standalone server on a free port (3000+) for the UI.
+  - A uvicorn-hosted FastAPI app on port **8765** (different from dev port
+    8000 to avoid collisions if you're also running the dev stack).
+- The browser window points at the Next.js URL, and `/api/v1/*` requests are
+  rewritten (at build time) to forward to the FastAPI backend.
+
+### Multi-tenant model
+
+All CRM data is scoped by `workspace_id`. Every request resolves identity from:
+
+- `X-Workspace-Id` header
+- `X-User-Id` header
+
+If headers are omitted, the backend falls back to `DEFAULT_WORKSPACE_ID` /
+`DEFAULT_USER_ID` env vars. In development, startup bootstrap creates a default
+workspace + user if neither exists.
+
+Tenant-scoped tables:
+- `leads`, `prospects`, `partner_candidates`
+- `website_snapshots`, `email_drafts`
+- `email_threads`, `email_messages`
+- `workspace_settings`, `workspace_profile`, `workspace_ai_strategy`
+- `oauth_tokens`, `integration_accounts`
+
+### Backend (Docker, dev mode)
+
+```bash
+docker compose up --build
+docker compose exec backend alembic upgrade head
+curl http://localhost:8000/health
+```
+
+### Auth (dev)
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/auth/login \
@@ -122,164 +336,50 @@ curl -X POST http://localhost:8000/api/v1/auth/login \
   -d '{"email":"dev@example.com","name":"Dev User"}'
 ```
 
-## Header Usage
-
-Use headers for explicit workspace scoping:
+Returns `workspace_id` + `user_id` — paste these into `frontend/.env.local`:
 
 ```bash
--H "X-Workspace-Id: <workspace_uuid>" \
--H "X-User-Id: <user_uuid>"
+NEXT_PUBLIC_API_BASE=http://localhost:8000
+NEXT_PUBLIC_WORKSPACE_ID=<workspace_uuid>
+NEXT_PUBLIC_USER_ID=<user_uuid>
 ```
 
-## Workspace/User Endpoints
+### Useful endpoints
 
-Create workspace:
+| Method  | Path                                  | What it does                          |
+|---------|---------------------------------------|---------------------------------------|
+| GET     | `/health`                             | Liveness                              |
+| POST    | `/api/v1/auth/login`                  | Dev login / create user               |
+| GET     | `/api/v1/me`                          | Resolve current workspace + user      |
+| GET     | `/api/v1/leads`                       | List leads (workspace-scoped)         |
+| POST    | `/api/v1/leads/imports`               | Bulk import with dedupe               |
+| POST    | `/api/v1/leads/{id}/run-agent1`       | Research the lead                     |
+| POST    | `/api/v1/leads/{id}/run-agent2`       | Draft the email                       |
+| POST    | `/api/v1/leads/{id}/run-agent3`       | Verify the draft                      |
+| GET     | `/api/v1/prospects`                   | List discovery prospects              |
+| POST    | `/api/v1/prospects/convert-to-leads`  | Promote prospects → leads             |
+| GET     | `/api/v1/partnerships`                | List partnership candidates           |
+| POST    | `/api/v1/partnerships/{id}/generate-outreach` | AI-draft vendor inquiry email |
+| GET     | `/api/v1/settings`                    | Per-workspace API keys + Gmail status |
+| GET     | `/api/v1/inbox/threads`               | Email threads with classifications    |
+
+### Environment variables (backend)
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/workspaces \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Acme Workspace"}'
+DATABASE_URL=sqlite:///./crm.db          # SQLite (Electron) or Postgres
+ENV=development
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-sonnet-4-5
+DEFAULT_WORKSPACE_ID=
+DEFAULT_USER_ID=
 ```
 
-Create user in workspace (must match request workspace header):
+Per-workspace API keys set via the Settings UI override these env vars.
 
-```bash
-curl -X POST http://localhost:8000/api/v1/workspaces/<workspace_uuid>/users \
-  -H "Content-Type: application/json" \
-  -H "X-Workspace-Id: <workspace_uuid>" \
-  -H "X-User-Id: <user_uuid>" \
-  -d '{"email":"owner@acme.com","name":"Owner","role":"owner"}'
-```
+---
 
-## Pipeline Example (Scoped)
+## License
 
-```bash
-BASE="http://localhost:8000"
-WORKSPACE_ID="<workspace_uuid>"
-USER_ID="<user_uuid>"
-
-LEAD_ID=$(curl -s -X POST "$BASE/api/v1/leads" \
-  -H "Content-Type: application/json" \
-  -H "X-Workspace-Id: $WORKSPACE_ID" \
-  -H "X-User-Id: $USER_ID" \
-  -d '{
-    "name":"Ada Lovelace",
-    "title":"CTO",
-    "company":"Analytical Engines",
-    "industry":"Software",
-    "location":"London",
-    "website_url":"https://example.com",
-    "email":"ada@example.com",
-    "source":"manual",
-    "status":"new"
-  }' | jq -r '.id')
-
-# ingest website
-curl -s -X POST "$BASE/api/v1/leads/$LEAD_ID/ingest-website" \
-  -H "X-Workspace-Id: $WORKSPACE_ID" \
-  -H "X-User-Id: $USER_ID" | jq
-
-# run agent1
-curl -s -X POST "$BASE/api/v1/leads/$LEAD_ID/run-agent1" \
-  -H "X-Workspace-Id: $WORKSPACE_ID" \
-  -H "X-User-Id: $USER_ID" | jq
-
-# run agent2
-curl -s -X POST "$BASE/api/v1/leads/$LEAD_ID/run-agent2" \
-  -H "X-Workspace-Id: $WORKSPACE_ID" \
-  -H "X-User-Id: $USER_ID" | jq
-
-# run agent3
-curl -s -X POST "$BASE/api/v1/leads/$LEAD_ID/run-agent3" \
-  -H "X-Workspace-Id: $WORKSPACE_ID" \
-  -H "X-User-Id: $USER_ID" | jq
-
-# list snapshots + drafts + latest context
-curl -s "$BASE/api/v1/leads/$LEAD_ID/snapshots" \
-  -H "X-Workspace-Id: $WORKSPACE_ID" \
-  -H "X-User-Id: $USER_ID" | jq
-
-curl -s "$BASE/api/v1/leads/$LEAD_ID/drafts" \
-  -H "X-Workspace-Id: $WORKSPACE_ID" \
-  -H "X-User-Id: $USER_ID" | jq
-
-curl -s "$BASE/api/v1/leads/$LEAD_ID/latest-context" \
-  -H "X-Workspace-Id: $WORKSPACE_ID" \
-  -H "X-User-Id: $USER_ID" | jq
-```
-
-## Lead Import Workflow
-
-Import leads in bulk (workspace-scoped, with dedupe + row-level errors):
-
-```bash
-curl -X POST http://localhost:8000/api/v1/leads/imports \
-  -H "Content-Type: application/json" \
-  -H "X-Workspace-Id: <workspace_uuid>" \
-  -H "X-User-Id: <user_uuid>" \
-  -d '{
-    "source": "google_places",
-    "items": [
-      {
-        "name": "Acme Plumbing",
-        "company": "Acme Plumbing",
-        "industry": "plumber",
-        "location": "Chico, CA",
-        "website_url": "https://acmeplumbing.example",
-        "source": "google_places"
-      }
-    ],
-    "dedupe_by_website": true,
-    "dedupe_by_company_location": true
-  }'
-```
-
-`crawler.py` now outputs a **prospects** import payload (for `/api/v1/prospects/import`), not direct CRM lead imports.
-
-## Prospect Discovery Flow
-
-Prospects are stored separately from CRM leads:
-
-`crawler/search -> prospects -> manual review -> convert selected -> leads -> pipeline`
-
-List prospects:
-
-```bash
-curl -s "http://localhost:8000/api/v1/prospects?limit=20&offset=0" \
-  -H "X-Workspace-Id: <workspace_uuid>" \
-  -H "X-User-Id: <user_uuid>" | jq
-```
-
-Import prospects from crawler JSON:
-
-```bash
-curl -s -X POST http://localhost:8000/api/v1/prospects/import \
-  -H "Content-Type: application/json" \
-  -H "X-Workspace-Id: <workspace_uuid>" \
-  -H "X-User-Id: <user_uuid>" \
-  --data-binary @crawler_output.json | jq
-```
-
-Convert prospects to CRM leads:
-
-```bash
-curl -s -X POST http://localhost:8000/api/v1/prospects/convert-to-leads \
-  -H "Content-Type: application/json" \
-  -H "X-Workspace-Id: <workspace_uuid>" \
-  -H "X-User-Id: <user_uuid>" \
-  -d '{"prospect_ids":["<prospect_uuid_1>","<prospect_uuid_2>"]}' | jq
-```
-
-Workspace settings API (per-workspace API keys):
-
-```bash
-curl -s http://localhost:8000/api/v1/settings \
-  -H "X-Workspace-Id: <workspace_uuid>" \
-  -H "X-User-Id: <user_uuid>" | jq
-
-curl -s -X PATCH http://localhost:8000/api/v1/settings \
-  -H "Content-Type: application/json" \
-  -H "X-Workspace-Id: <workspace_uuid>" \
-  -H "X-User-Id: <user_uuid>" \
-  -d '{"google_places_api_key":"AIza...","openai_api_key":"sk-..."}' | jq
-```
+Proprietary — © Blue Arc Networks. All rights reserved.

@@ -1,5 +1,21 @@
 .env
+.DS_Store
+.claude/
 __pycache__/
 *.pyc
 frontend/node_modules/
 frontend/.next/
+frontend/tsconfig.tsbuildinfo
+
+# Electron build intermediates (the .dmg / .zip / .AppImage / .exe ARE tracked via Git LFS)
+frontend/electron-dist/mac-arm64/
+frontend/electron-dist/builder-debug.yml
+frontend/electron-dist/builder-effective-config.yaml
+
+# Local SQLite databases — never commit user data
+backend/crm.db
+backend/crm.db-shm
+backend/crm.db-wal
+backend/crm_test.db
+backend/crm_test.db-shm
+backend/crm_test.db-wal

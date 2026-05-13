@@ -6,7 +6,8 @@ const path = require("path");
 const net = require("net");
 const { spawn } = require("child_process");
 
-const BACKEND_PORT = process.env.BACKEND_PORT || "8000";
+// Packaged app uses 8765 to avoid colliding with dev server on 8000
+const BACKEND_PORT = process.env.BACKEND_PORT || (app.isPackaged ? "8765" : "8000");
 /** Port the embedded Next.js server binds to (packaged app picks a free port if the default is busy). */
 let resolvedFrontendPort = Number(process.env.PORT) || 3000;
 
@@ -108,8 +109,19 @@ function getBackendRoot() {
   return null;
 }
 
+function resolvedPython(backendRoot) {
+  if (process.env.CRM_PYTHON) return process.env.CRM_PYTHON;
+  // Prefer the virtualenv bundled inside the backend directory
+  const venvBin = process.platform === "win32"
+    ? path.join(backendRoot, ".venv", "Scripts", "python.exe")
+    : path.join(backendRoot, ".venv", "bin", "python3");
+  if (fs.existsSync(venvBin)) return venvBin;
+  // Fall back to system Python
+  return process.platform === "win32" ? "python" : "python3";
+}
+
 function startBackend(backendRoot) {
-  const py = process.env.CRM_PYTHON || (process.platform === "win32" ? "python" : "python3");
+  const py = resolvedPython(backendRoot);
   const args = [
     "-m",
     "uvicorn",
@@ -119,9 +131,15 @@ function startBackend(backendRoot) {
     "--port",
     String(BACKEND_PORT)
   ];
+
+  // Store the SQLite DB in the user's app data directory so it persists across app updates
+  const dbDir = app.getPath("userData");
+  const dbPath = path.join(dbDir, "crm.db");
+  const dbUrl = `sqlite:///${dbPath}`;
+
   backendChild = spawn(py, args, {
     cwd: backendRoot,
-    env: { ...process.env, PYTHONUNBUFFERED: "1" },
+    env: { ...process.env, PYTHONUNBUFFERED: "1", DATABASE_URL: dbUrl },
     stdio: "inherit"
   });
   backendChild.on("error", (err) => {
@@ -181,6 +199,7 @@ function startNextProductionServer() {
         NODE_ENV: "production",
         PORT: String(resolvedFrontendPort),
         HOSTNAME: "127.0.0.1",
+        CRM_API_PROXY_TARGET: `http://127.0.0.1:${BACKEND_PORT}`,
         PATH: pathEnv
       },
       stdio: "inherit"
@@ -193,7 +212,7 @@ function startNextProductionServer() {
       ["run", "start", "--", "-H", "127.0.0.1", "-p", String(resolvedFrontendPort)],
       {
         cwd: appRoot,
-        env: { ...process.env, PORT: String(resolvedFrontendPort), PATH: pathEnv },
+        env: { ...process.env, PORT: String(resolvedFrontendPort), CRM_API_PROXY_TARGET: `http://127.0.0.1:${BACKEND_PORT}`, PATH: pathEnv },
         shell: process.platform === "win32",
         stdio: "inherit"
       }

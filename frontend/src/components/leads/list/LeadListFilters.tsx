@@ -72,6 +72,7 @@ export function LeadListFilters({
         >
           Needs Review
         </button>
+        {/* "Converted" lives in the top-of-page Archive view toggle now — keeping a chip here too would overlap. */}
       </div>
 
       <div className="row" style={{ justifyContent: "space-between", alignItems: "end" }}>

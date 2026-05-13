@@ -4,16 +4,22 @@ import { FormEvent, useEffect, useState } from "react";
 
 import {
   ApiError,
+  disconnectGmail,
   getApiBaseForDisplay,
   generateWorkspaceAiStrategy,
+  getDbExportUrl,
+  getGmailConnectUrl,
+  getGmailSendAsAliases,
+  getGmailStatus,
   getWorkspaceAiStrategy,
   getWorkspaceProfile,
   getWorkspaceSettings,
+  importDatabase,
   patchWorkspaceAiStrategy,
   patchWorkspaceProfile,
   patchWorkspaceSettings
 } from "@/src/lib/api";
-import { WorkspaceAiStrategy } from "@/src/lib/types";
+import { SendAsAlias, WorkspaceAiStrategy } from "@/src/lib/types";
 import { getUserId, getWorkspaceId, setUserId, setWorkspaceId } from "@/src/lib/identity";
 
 type SettingsTab = "general" | "integrations" | "ai";
@@ -63,6 +69,8 @@ export default function SettingsPage() {
   const [userId, setUserInput] = useState("");
 
   const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const [anthropicApiKey, setAnthropicApiKey] = useState("");
+  const [preferredAiProvider, setPreferredAiProvider] = useState("auto");
   const [googleApiKey, setGoogleApiKey] = useState("");
   const [googleOAuthClientId, setGoogleOAuthClientId] = useState("");
   const [googleOAuthClientSecret, setGoogleOAuthClientSecret] = useState("");
@@ -96,6 +104,21 @@ export default function SettingsPage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [generatingStrategy, setGeneratingStrategy] = useState(false);
   const [savingStrategy, setSavingStrategy] = useState(false);
+  const [importingDb, setImportingDb] = useState(false);
+  const [dbImportMessage, setDbImportMessage] = useState<string | null>(null);
+  const [dbImportError, setDbImportError] = useState<string | null>(null);
+
+  // Gmail integration
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [gmailEmail, setGmailEmail] = useState<string | null>(null);
+  const [gmailError, setGmailError] = useState<string | null>(null);
+  const [gmailSendAsEmail, setGmailSendAsEmail] = useState("");
+  const [gmailSendAsDisplayName, setGmailSendAsDisplayName] = useState("");
+  const [gmailAliases, setGmailAliases] = useState<SendAsAlias[]>([]);
+  const [connectingGmail, setConnectingGmail] = useState(false);
+  const [disconnectingGmail, setDisconnectingGmail] = useState(false);
+  const [savingGmailAlias, setSavingGmailAlias] = useState(false);
+  const [gmailMessage, setGmailMessage] = useState<string | null>(null);
 
   function applyAiStrategyState(strategy: WorkspaceAiStrategy): void {
     setAiStrategy(strategy);
@@ -109,13 +132,25 @@ export default function SettingsPage() {
     setUserInput(getUserId());
     setLoading(true);
     setError(null);
-    void Promise.all([getWorkspaceSettings(), getWorkspaceProfile(), getWorkspaceAiStrategy()])
-      .then(([settings, profile, strategy]) => {
+    void Promise.all([getWorkspaceSettings(), getWorkspaceProfile(), getWorkspaceAiStrategy(), getGmailStatus()])
+      .then(([settings, profile, strategy, gmailStatus]) => {
         setOpenaiApiKey(settings.openai_api_key ?? "");
+        setAnthropicApiKey(settings.anthropic_api_key ?? "");
+        setPreferredAiProvider(settings.preferred_ai_provider ?? "auto");
         setGoogleApiKey(settings.google_places_api_key ?? "");
         setGoogleOAuthClientId(settings.google_oauth_client_id ?? "");
         setGoogleOAuthClientSecret(settings.google_oauth_client_secret ?? "");
         setGmailOAuthRedirectUri(settings.gmail_oauth_redirect_uri ?? "");
+        setGmailSendAsEmail(settings.gmail_send_as_email ?? "");
+        setGmailSendAsDisplayName(settings.gmail_send_as_display_name ?? "");
+
+        setGmailConnected(gmailStatus.connected);
+        setGmailEmail(gmailStatus.connected_email ?? null);
+        setGmailError(gmailStatus.last_error ?? null);
+
+        if (gmailStatus.connected) {
+          void getGmailSendAsAliases().then((r) => setGmailAliases(r.aliases)).catch(() => {});
+        }
 
         setBusinessName(profile.business_name ?? "");
         setBusinessDescription(profile.business_description ?? "");
@@ -162,12 +197,16 @@ export default function SettingsPage() {
     try {
       const updated = await patchWorkspaceSettings({
         openai_api_key: openaiApiKey.trim() || null,
+        anthropic_api_key: anthropicApiKey.trim() || null,
+        preferred_ai_provider: preferredAiProvider,
         google_places_api_key: googleApiKey.trim() || null,
         google_oauth_client_id: googleOAuthClientId.trim() || null,
         google_oauth_client_secret: googleOAuthClientSecret.trim() || null,
         gmail_oauth_redirect_uri: gmailOAuthRedirectUri.trim() || null
       });
       setOpenaiApiKey(updated.openai_api_key ?? "");
+      setAnthropicApiKey(updated.anthropic_api_key ?? "");
+      setPreferredAiProvider(updated.preferred_ai_provider ?? "auto");
       setGoogleApiKey(updated.google_places_api_key ?? "");
       setGoogleOAuthClientId(updated.google_oauth_client_id ?? "");
       setGoogleOAuthClientSecret(updated.google_oauth_client_secret ?? "");
@@ -272,6 +311,88 @@ export default function SettingsPage() {
       setError(getErrorMessage(saveError));
     } finally {
       setSavingStrategy(false);
+    }
+  }
+
+  async function loadGmailAliases(): Promise<void> {
+    try {
+      const result = await getGmailSendAsAliases();
+      setGmailAliases(result.aliases);
+    } catch {
+      // Aliases unavailable — not fatal
+      setGmailAliases([]);
+    }
+  }
+
+  async function onConnectGmail(): Promise<void> {
+    setConnectingGmail(true);
+    setGmailError(null);
+    setGmailMessage(null);
+    try {
+      const { connect_url } = await getGmailConnectUrl();
+      if (!connect_url.startsWith("https://")) {
+        throw new Error("Invalid OAuth URL returned from server.");
+      }
+      window.location.href = connect_url;
+    } catch (err) {
+      setGmailError(getErrorMessage(err));
+      setConnectingGmail(false);
+    }
+  }
+
+  async function onDisconnectGmail(): Promise<void> {
+    setDisconnectingGmail(true);
+    setGmailError(null);
+    setGmailMessage(null);
+    try {
+      await disconnectGmail();
+      setGmailConnected(false);
+      setGmailEmail(null);
+      setGmailAliases([]);
+      setGmailSendAsEmail("");
+      setGmailSendAsDisplayName("");
+      setGmailMessage("Gmail disconnected.");
+    } catch (err) {
+      setGmailError(getErrorMessage(err));
+    } finally {
+      setDisconnectingGmail(false);
+    }
+  }
+
+  async function onSaveGmailAlias(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setSavingGmailAlias(true);
+    setGmailError(null);
+    setGmailMessage(null);
+    try {
+      const alias = gmailAliases.find((a) => a.send_as_email === gmailSendAsEmail);
+      await patchWorkspaceSettings({
+        gmail_send_as_email: gmailSendAsEmail.trim() || null,
+        gmail_send_as_display_name: (alias?.display_name ?? gmailSendAsDisplayName.trim()) || null,
+      });
+      setGmailMessage("Send-as address saved. Future emails will use this address.");
+    } catch (err) {
+      setGmailError(getErrorMessage(err));
+    } finally {
+      setSavingGmailAlias(false);
+    }
+  }
+
+  async function onImportDatabase(event: React.ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImportingDb(true);
+    setDbImportError(null);
+    setDbImportMessage(null);
+    try {
+      const result = await importDatabase(file);
+      setDbImportMessage(result.message);
+    } catch (importError) {
+      setDbImportError(getErrorMessage(importError));
+    } finally {
+      setImportingDb(false);
+      // reset file input so the same file can be re-selected if needed
+      event.target.value = "";
     }
   }
 
@@ -427,75 +548,238 @@ export default function SettingsPage() {
         ) : null}
 
         {activeTab === "integrations" ? (
-          <form className="stack" onSubmit={onSaveWorkspaceSettings}>
-            <h2>Integrations</h2>
-            <div className="row">
+          <div className="stack">
+            {/* ── Gmail ── */}
+            <section className="subcard stack">
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <h2 style={{ margin: 0 }}>Gmail</h2>
+                {gmailConnected ? (
+                  <span style={{ fontSize: ".82rem", color: "var(--green, #3fb950)", fontWeight: 600 }}>● Connected</span>
+                ) : (
+                  <span style={{ fontSize: ".82rem", color: "var(--text-secondary)", fontWeight: 600 }}>○ Not connected</span>
+                )}
+              </div>
+
+              {gmailConnected ? (
+                <div className="stack">
+                  <div className="kv-grid">
+                    <div className="kv">
+                      <strong>Signed in as</strong>
+                      {gmailEmail ?? "—"}
+                    </div>
+                  </div>
+
+                  {/* Send-as alias picker */}
+                  <form className="stack" onSubmit={(e) => void onSaveGmailAlias(e)}>
+                    <h3 style={{ marginTop: 4, marginBottom: 4, fontSize: ".92rem" }}>Send emails as</h3>
+                    <p className="muted" style={{ fontSize: ".83rem", marginBottom: 6 }}>
+                      Choose which address outreach emails appear to come from. Aliases must already be verified in Gmail.
+                    </p>
+
+                    {gmailAliases.length > 0 ? (
+                      <div className="field">
+                        <label htmlFor="gmail_send_as_select">From address</label>
+                        <select
+                          id="gmail_send_as_select"
+                          value={gmailSendAsEmail}
+                          onChange={(e) => {
+                            setGmailSendAsEmail(e.target.value);
+                            const alias = gmailAliases.find((a) => a.send_as_email === e.target.value);
+                            setGmailSendAsDisplayName(alias?.display_name ?? "");
+                          }}
+                        >
+                          <option value="">— default (primary inbox) —</option>
+                          {gmailAliases.map((alias) => (
+                            <option key={alias.send_as_email} value={alias.send_as_email}>
+                              {alias.display_name
+                                ? `${alias.display_name} <${alias.send_as_email}>`
+                                : alias.send_as_email}
+                              {alias.is_primary ? " (primary)" : ""}
+                              {alias.is_default ? " (default)" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="row" style={{ alignItems: "center", gap: 8 }}>
+                        <div className="field" style={{ flex: 1 }}>
+                          <label htmlFor="gmail_send_as_manual">From address</label>
+                          <input
+                            id="gmail_send_as_manual"
+                            type="email"
+                            placeholder={gmailEmail ?? "you@example.com"}
+                            value={gmailSendAsEmail}
+                            onChange={(e) => setGmailSendAsEmail(e.target.value)}
+                          />
+                        </div>
+                        <div className="field" style={{ flex: 1 }}>
+                          <label htmlFor="gmail_send_as_name">Display name (optional)</label>
+                          <input
+                            id="gmail_send_as_name"
+                            type="text"
+                            placeholder="John Smith"
+                            value={gmailSendAsDisplayName}
+                            onChange={(e) => setGmailSendAsDisplayName(e.target.value)}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ marginTop: 20, flexShrink: 0 }}
+                          onClick={() => void loadGmailAliases()}
+                        >
+                          Load aliases
+                        </button>
+                      </div>
+                    )}
+
+                    {gmailMessage ? <div className="success">{gmailMessage}</div> : null}
+                    {gmailError ? <div className="error">{gmailError}</div> : null}
+
+                    <div className="inline-actions">
+                      <button type="submit" className="btn-secondary" disabled={savingGmailAlias}>
+                        {savingGmailAlias ? "Saving..." : "Save Send-as Address"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ color: "var(--red, #f85149)" }}
+                        disabled={disconnectingGmail}
+                        onClick={() => void onDisconnectGmail()}
+                      >
+                        {disconnectingGmail ? "Disconnecting..." : "Disconnect Gmail"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                <div className="stack">
+                  <p className="muted" style={{ fontSize: ".88rem" }}>
+                    Connect your Gmail account to send outreach emails and sync replies directly through CRM Command.
+                  </p>
+                  {gmailError ? <div className="error">{gmailError}</div> : null}
+                  {gmailMessage ? <div className="success">{gmailMessage}</div> : null}
+                  <div className="inline-actions">
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={connectingGmail || loading}
+                      onClick={() => void onConnectGmail()}
+                    >
+                      {connectingGmail ? "Redirecting…" : "Connect Gmail"}
+                    </button>
+                  </div>
+                  <p className="muted" style={{ fontSize: ".78rem" }}>
+                    You&apos;ll need a Google OAuth client configured below before connecting.
+                  </p>
+                </div>
+              )}
+            </section>
+
+            {/* ── API Keys ── */}
+            <form className="stack" onSubmit={onSaveWorkspaceSettings}>
+              <h2>API Keys</h2>
+              <p className="muted" style={{ fontSize: "0.88rem", marginTop: -4 }}>
+                Anthropic (Claude) is used for email generation when configured — it follows outreach instructions more reliably than GPT.
+              </p>
+              <div className="row">
+                <div className="field">
+                  <label htmlFor="anthropic_api_key">
+                    Anthropic API Key <span style={{ fontSize: ".75rem", fontWeight: 600, color: "var(--blue)" }}>Recommended for emails</span>
+                  </label>
+                  <input
+                    id="anthropic_api_key"
+                    type="password"
+                    placeholder="sk-ant-..."
+                    value={anthropicApiKey}
+                    onChange={(event) => setAnthropicApiKey(event.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="openai_api_key">OpenAI API Key</label>
+                  <input
+                    id="openai_api_key"
+                    type="password"
+                    placeholder="sk-..."
+                    value={openaiApiKey}
+                    onChange={(event) => setOpenaiApiKey(event.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="field" style={{ maxWidth: 380 }}>
+                <label htmlFor="preferred_ai_provider">Email AI Provider</label>
+                <select
+                  id="preferred_ai_provider"
+                  value={preferredAiProvider}
+                  onChange={(event) => setPreferredAiProvider(event.target.value)}
+                >
+                  <option value="auto">Auto (Claude preferred, GPT fallback)</option>
+                  <option value="anthropic">Force Claude (Anthropic)</option>
+                  <option value="openai">Force GPT (OpenAI)</option>
+                </select>
+              </div>
+
+              <div className="row">
+                <div className="field">
+                  <label htmlFor="google_places_api_key">Google Places API Key</label>
+                  <input
+                    id="google_places_api_key"
+                    type="password"
+                    placeholder="AIza..."
+                    value={googleApiKey}
+                    onChange={(event) => setGoogleApiKey(event.target.value)}
+                  />
+                </div>
+                <div className="field" />
+              </div>
+
+              <h3 style={{ marginTop: "1rem", marginBottom: 0 }}>Google OAuth (for Gmail)</h3>
+              <p className="muted" style={{ marginTop: 4, fontSize: "0.88rem" }}>
+                Web application credentials from Google Cloud Console. The authorized redirect URI must match the value
+                below (or your server&apos;s <code>GMAIL_OAUTH_REDIRECT_URI</code> env var).
+              </p>
               <div className="field">
-                <label htmlFor="openai_api_key">OpenAI API Key</label>
+                <label htmlFor="google_oauth_client_id">OAuth Client ID</label>
                 <input
-                  id="openai_api_key"
-                  type="password"
-                  placeholder="sk-..."
-                  value={openaiApiKey}
-                  onChange={(event) => setOpenaiApiKey(event.target.value)}
+                  id="google_oauth_client_id"
+                  type="text"
+                  autoComplete="off"
+                  placeholder="xxx.apps.googleusercontent.com"
+                  value={googleOAuthClientId}
+                  onChange={(event) => setGoogleOAuthClientId(event.target.value)}
                 />
               </div>
               <div className="field">
-                <label htmlFor="google_places_api_key">Google Places API Key</label>
+                <label htmlFor="google_oauth_client_secret">OAuth Client Secret</label>
                 <input
-                  id="google_places_api_key"
+                  id="google_oauth_client_secret"
                   type="password"
-                  placeholder="AIza..."
-                  value={googleApiKey}
-                  onChange={(event) => setGoogleApiKey(event.target.value)}
+                  autoComplete="new-password"
+                  placeholder="GOCSPX-..."
+                  value={googleOAuthClientSecret}
+                  onChange={(event) => setGoogleOAuthClientSecret(event.target.value)}
                 />
               </div>
-            </div>
-            <h3 style={{ marginTop: "1rem", marginBottom: 0 }}>Gmail (Google OAuth)</h3>
-            <p className="muted" style={{ marginTop: 4, fontSize: "0.9rem" }}>
-              Web application client from Google Cloud Console. Authorized redirect URI must match the value below (or your server&apos;s{" "}
-              <code>GMAIL_OAUTH_REDIRECT_URI</code>).
-            </p>
-            <div className="field">
-              <label htmlFor="google_oauth_client_id">OAuth Client ID</label>
-              <input
-                id="google_oauth_client_id"
-                type="text"
-                autoComplete="off"
-                placeholder="xxx.apps.googleusercontent.com"
-                value={googleOAuthClientId}
-                onChange={(event) => setGoogleOAuthClientId(event.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="google_oauth_client_secret">OAuth Client Secret</label>
-              <input
-                id="google_oauth_client_secret"
-                type="password"
-                autoComplete="new-password"
-                placeholder="GOCSPX-..."
-                value={googleOAuthClientSecret}
-                onChange={(event) => setGoogleOAuthClientSecret(event.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="gmail_oauth_redirect_uri">OAuth redirect URI (optional)</label>
-              <input
-                id="gmail_oauth_redirect_uri"
-                type="url"
-                autoComplete="off"
-                placeholder="http://localhost:8000/api/v1/integrations/gmail/callback"
-                value={gmailOAuthRedirectUri}
-                onChange={(event) => setGmailOAuthRedirectUri(event.target.value)}
-              />
-            </div>
-            {settingsMessage ? <div className="success">{settingsMessage}</div> : null}
-            <div className="inline-actions">
-              <button type="submit" className="btn-secondary" disabled={savingSettings || loading}>
-                {savingSettings ? "Saving..." : "Save Settings"}
-              </button>
-            </div>
-          </form>
+              <div className="field">
+                <label htmlFor="gmail_oauth_redirect_uri">OAuth Redirect URI (optional override)</label>
+                <input
+                  id="gmail_oauth_redirect_uri"
+                  type="url"
+                  autoComplete="off"
+                  placeholder="http://localhost:8000/api/v1/integrations/gmail/callback"
+                  value={gmailOAuthRedirectUri}
+                  onChange={(event) => setGmailOAuthRedirectUri(event.target.value)}
+                />
+              </div>
+
+              {settingsMessage ? <div className="success">{settingsMessage}</div> : null}
+              <div className="inline-actions">
+                <button type="submit" className="btn-secondary" disabled={savingSettings || loading}>
+                  {savingSettings ? "Saving..." : "Save API Keys"}
+                </button>
+              </div>
+            </form>
+          </div>
         ) : null}
 
         {activeTab === "ai" ? (
@@ -587,16 +871,17 @@ export default function SettingsPage() {
                       <label>Suggested Categories</label>
                       <div className="stack">
                         {strategyIdealCustomers.map((item) => (
-                          <label key={item.category} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                          <label key={item.category} className="check-row">
                             <input
                               type="checkbox"
                               checked={selectedCategories.includes(item.category)}
                               onChange={() => setSelectedCategories((prev) => toggleListItem(prev, item.category))}
                             />
-                            <span>
-                              <strong>{item.display_name}</strong> <span className="muted">(priority {item.priority})</span>
-                              <div className="muted">Category key: {item.category}</div>
-                              <div className="muted">{item.why_fit}</div>
+                            <span className="check-row-body">
+                              <strong>{item.display_name}</strong>
+                              <span className="muted">(priority {item.priority})</span>
+                              <span className="muted">Category key: {item.category}</span>
+                              <span className="muted">{item.why_fit}</span>
                             </span>
                           </label>
                         ))}
@@ -608,18 +893,18 @@ export default function SettingsPage() {
                         {strategyPainPoints.map((item) => {
                           const specialtyMatches = inferPainMatchesSpecialties(item.label, item.why_relevant, specialtyList);
                           return (
-                            <label key={item.key} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                            <label key={item.key} className="check-row">
                               <input
                                 type="checkbox"
                                 checked={selectedPainPoints.includes(item.key)}
                                 onChange={() => setSelectedPainPoints((prev) => toggleListItem(prev, item.key))}
                               />
-                              <span>
+                              <span className="check-row-body">
                                 <strong>{item.label}</strong>
-                                <div className="muted">{item.why_relevant}</div>
-                                <div className="muted">
+                                <span className="muted">{item.why_relevant}</span>
+                                <span className="muted">
                                   Matches specialties: {specialtyMatches.length ? specialtyMatches.join(", ") : "No direct keyword match"}
-                                </div>
+                                </span>
                               </span>
                             </label>
                           );
@@ -690,6 +975,48 @@ export default function SettingsPage() {
             </section>
           </div>
         ) : null}
+      </section>
+
+      <section className="card stack">
+        <h2>Database</h2>
+        <p className="muted" style={{ fontSize: ".88rem" }}>
+          Export your data as a portable <code>.db</code> file to back up or transfer to another machine.
+          Importing will replace the current database — the previous file is backed up automatically.
+        </p>
+
+        <div className="row" style={{ flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={{ fontSize: ".82rem", fontWeight: 500 }}>Export</span>
+            <a
+              href={getDbExportUrl()}
+              download="crm_export.db"
+              className="btn-secondary"
+              style={{ display: "inline-block", textDecoration: "none" }}
+            >
+              Download Database
+            </a>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={{ fontSize: ".82rem", fontWeight: 500 }}>Import</span>
+            <label className="btn-secondary" style={{ cursor: "pointer", display: "inline-block" }}>
+              {importingDb ? "Uploading…" : "Import Database (.db)"}
+              <input
+                type="file"
+                accept=".db"
+                style={{ display: "none" }}
+                disabled={importingDb}
+                onChange={(e) => void onImportDatabase(e)}
+              />
+            </label>
+            <span className="muted" style={{ fontSize: ".78rem" }}>
+              Replaces the active database. Restart the app after import.
+            </span>
+          </div>
+        </div>
+
+        {dbImportMessage ? <div className="success">{dbImportMessage}</div> : null}
+        {dbImportError ? <div className="error">{dbImportError}</div> : null}
       </section>
 
       <section className="card stack">

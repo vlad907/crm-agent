@@ -4,7 +4,7 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import ForeignKey, Integer, String
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import JSON, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -17,9 +17,9 @@ if TYPE_CHECKING:
 class Prospect(TimestampMixin, Base):
     __tablename__ = "prospects"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     workspace_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -33,7 +33,7 @@ class Prospect(TimestampMixin, Base):
     website_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     rating: Mapped[float | None] = mapped_column(nullable=True)
     review_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    raw_source_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    raw_source_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     import_status: Mapped[str] = mapped_column(String(20), nullable=False, default="new", index=True)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="prospects")

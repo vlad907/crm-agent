@@ -10,6 +10,139 @@ import httpx
 logger = logging.getLogger(__name__)
 
 NEARBY_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+
+# Maps user-friendly category names → valid Google Places API type strings.
+# When a category isn't in this map, it falls back to type=establishment with the
+# category as the keyword so Google still filters by relevance.
+CATEGORY_TO_PLACES_TYPE: dict[str, str] = {
+    # Medical / dental
+    "dental": "dentist",
+    "dentist": "dentist",
+    "dental office": "dentist",
+    "dentistry": "dentist",
+    "orthodontist": "dentist",
+    "doctor": "doctor",
+    "physician": "doctor",
+    "medical": "doctor",
+    "clinic": "doctor",
+    "hospital": "hospital",
+    "pharmacy": "pharmacy",
+    "drugstore": "pharmacy",
+    "optometrist": "doctor",
+    "chiropractor": "physiotherapist",
+    "physical therapy": "physiotherapist",
+    "physiotherapy": "physiotherapist",
+    "veterinarian": "veterinary_care",
+    "vet": "veterinary_care",
+    "veterinary": "veterinary_care",
+    # Food & drink
+    "restaurant": "restaurant",
+    "restaurants": "restaurant",
+    "food": "restaurant",
+    "bar": "bar",
+    "cafe": "cafe",
+    "coffee": "cafe",
+    "coffee shop": "cafe",
+    "bakery": "bakery",
+    "meal takeaway": "meal_takeaway",
+    "fast food": "meal_takeaway",
+    # Lodging
+    "hotel": "lodging",
+    "hotels": "lodging",
+    "lodging": "lodging",
+    "motel": "lodging",
+    "inn": "lodging",
+    # Home services / trades
+    "plumber": "plumber",
+    "plumbing": "plumber",
+    "electrician": "electrician",
+    "electrical": "electrician",
+    "roofing": "roofing_contractor",
+    "roofer": "roofing_contractor",
+    "contractor": "general_contractor",
+    "general contractor": "general_contractor",
+    "painter": "painter",
+    "painting": "painter",
+    "locksmith": "locksmith",
+    "moving": "moving_company",
+    "mover": "moving_company",
+    "storage": "storage",
+    "hvac": "general_contractor",
+    "landscaping": "general_contractor",
+    "landscaper": "general_contractor",
+    "pest control": "general_contractor",
+    "cleaning": "general_contractor",
+    "janitorial": "general_contractor",
+    # Auto
+    "auto repair": "car_repair",
+    "mechanic": "car_repair",
+    "car repair": "car_repair",
+    "car wash": "car_wash",
+    "auto dealer": "car_dealer",
+    "car dealer": "car_dealer",
+    # Retail
+    "store": "store",
+    "retail": "store",
+    "grocery": "grocery_or_supermarket",
+    "supermarket": "grocery_or_supermarket",
+    "pet store": "pet_store",
+    "florist": "florist",
+    "clothing": "clothing_store",
+    "electronics": "electronics_store",
+    "furniture": "furniture_store",
+    "hardware": "hardware_store",
+    "jewelry": "jewelry_store",
+    "book store": "book_store",
+    "bookstore": "book_store",
+    # Health / beauty
+    "gym": "gym",
+    "fitness": "gym",
+    "salon": "beauty_salon",
+    "hair salon": "hair_care",
+    "barbershop": "hair_care",
+    "barber": "hair_care",
+    "spa": "spa",
+    "nail salon": "beauty_salon",
+    # Finance / professional
+    "bank": "bank",
+    "atm": "atm",
+    "accounting": "accounting",
+    "accountant": "accounting",
+    "lawyer": "lawyer",
+    "attorney": "lawyer",
+    "law firm": "lawyer",
+    "insurance": "insurance_agency",
+    "real estate": "real_estate_agency",
+    "realtor": "real_estate_agency",
+    # Education / care
+    "school": "school",
+    "university": "university",
+    "daycare": "school",
+    "child care": "school",
+    # Other
+    "laundry": "laundry",
+    "dry cleaner": "laundry",
+    "gas station": "gas_station",
+    "parking": "parking",
+    "post office": "post_office",
+    "church": "church",
+    "funeral home": "funeral_home",
+}
+
+
+def resolve_places_type(category: str) -> tuple[str, str]:
+    """Return (places_api_type, keyword) for a user category string.
+
+    Uses CATEGORY_TO_PLACES_TYPE for known mappings. Falls back to
+    type='establishment' with the raw category as keyword so Google still
+    filters results by relevance rather than returning random businesses.
+    """
+    normalized = category.strip().lower()
+    places_type = CATEGORY_TO_PLACES_TYPE.get(normalized)
+    if places_type:
+        return places_type, category
+    # Unknown category: use as keyword with broad type
+    return "establishment", category
 PLACE_DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json"
 GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 AUTOCOMPLETE_URL = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
@@ -122,12 +255,15 @@ class GooglePlacesCrawler:
         return out
 
     def get_places(self, *, location: str, radius: int, business_type: str, keyword: str = "business") -> list[str]:
+        places_type, resolved_keyword = resolve_places_type(business_type)
+        # Prefer the category-derived keyword over the generic "business" default
+        effective_keyword = resolved_keyword if resolved_keyword != business_type or keyword == "business" else keyword
         params: dict[str, Any] = {
             "key": self.api_key,
             "location": location,
             "radius": radius,
-            "type": business_type,
-            "keyword": keyword,
+            "type": places_type,
+            "keyword": effective_keyword,
         }
 
         place_ids: list[str] = []
@@ -148,7 +284,7 @@ class GooglePlacesCrawler:
                 "pagetoken": next_page_token,
             }
 
-        logger.info("Google Places fetched type=%s count=%s", business_type, len(place_ids))
+        logger.info("Google Places fetched category=%s type=%s keyword=%s count=%s", business_type, places_type, effective_keyword, len(place_ids))
         return place_ids
 
     def get_place_details(self, place_id: str) -> GooglePlaceLead | None:

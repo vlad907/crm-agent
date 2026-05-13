@@ -144,6 +144,199 @@ SIGNATURE:
 
 Return JSON only matching the required schema."""
 
+AGENT2_PARTNERSHIP_SYSTEM_PROMPT = """You are Agent 2 writing a partnership outreach email (JSON: subject, email_body, used_signal).
+
+PURPOSE:
+- We want to JOIN or COLLABORATE with this company — as a subcontractor, vendor, field partner, or referral partner.
+- Do NOT pitch our services as if we are selling to them. Frame this as a mutual opportunity.
+- Use collaboration-focused language: "partner with," "work together," "join your network," "support your projects."
+
+TONE:
+- Professional, peer-to-peer, respectful.
+- Acknowledge what they do well based on the website analysis.
+- Show why we are a good fit for their network or project pipeline.
+
+CONTENT:
+- Reference the recommended_outreach_angle if provided — this is the specific angle to use.
+- Reference company_summary and fit reasoning if available.
+- Keep the email concise: 3–4 short paragraphs max.
+
+SIGNATURE:
+- If sender contact info is provided, use the real name, title, phone, and email in the sign-off.
+- NEVER use placeholder brackets like [Your Name], [Your Position], [Your Phone Number], or [Your Email].
+- If sender info is missing, end with a simple "Best regards" without placeholders.
+
+Return JSON only matching the required schema: subject, email_body, used_signal."""
+
+
+ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_VERSION = "2023-06-01"
+
+AGENT2_CLAUDE_LOCAL_SYSTEM = """You write cold outreach emails for a managed IT services company. Write ONE short, specific, genuine email — never a template.
+
+RULES:
+- Open with something real you know about this company from the website research. If there's a genuine pain point or operational signal, use it as the hook. If not, don't fabricate one.
+- Never open with "I hope this message finds you well" or any variation.
+- Cut every vague phrase: "enhance operations", "support your goals", "streamline your processes", "explore opportunities".
+- Every sentence must be specific. Name the actual service and the actual benefit.
+- One clear CTA — low-commitment, e.g. a quick call or a specific question.
+- Max 4 short paragraphs. Shorter is better. Sound like a real person.
+
+Return JSON only:
+{"subject": "...", "email_body": "...", "used_signal": "brief note on what evidence you used"}"""
+
+AGENT2_CLAUDE_PARTNERSHIP_SYSTEM = """You write partnership outreach emails — asking to JOIN or collaborate with a company, not selling to them.
+
+RULES:
+- You are a peer reaching out to a peer. We want to be added to their vendor or subcontractor network.
+- Open with a specific observation about what they do (from the research). Not a generic compliment.
+- State clearly who we are and why we'd be useful to their projects or clients.
+- The ask: can we get on their radar for future work? Keep it light.
+- Never pitch as if they are the customer buying from us.
+- Max 3-4 short paragraphs. Peer-to-peer tone. Human voice.
+
+Return JSON only:
+{"subject": "...", "email_body": "...", "used_signal": "brief note on what context you used"}"""
+
+
+def _extract_claude_json(response_data: dict[str, Any]) -> dict[str, Any]:
+    for block in response_data.get("content", []):
+        if block.get("type") == "text":
+            text = block["text"].strip()
+            if text.startswith("```"):
+                parts = text.split("```")
+                text = parts[1] if len(parts) > 1 else text
+                if text.startswith("json"):
+                    text = text[4:]
+            return json.loads(text.strip())
+    raise OpenAIClientError("Could not extract JSON from Claude response")
+
+
+def run_agent2_with_claude(
+    *,
+    lead_name: str,
+    company: str,
+    website_url: str | None,
+    snapshot_text: str,
+    agent1_output: dict[str, Any],
+    strategy_context: dict[str, Any] | None = None,
+    sender_info: dict[str, str] | None = None,
+    api_key: str,
+    lead_type: str = "local_business",
+    partnership_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_key = api_key.strip()
+    if not resolved_key:
+        raise OpenAIConfigurationError("Anthropic API key is not configured")
+
+    is_partnership = lead_type == "partnership"
+    system_prompt = AGENT2_CLAUDE_PARTNERSHIP_SYSTEM if is_partnership else AGENT2_CLAUDE_LOCAL_SYSTEM
+
+    ctx: dict[str, Any] = {
+        "company": company,
+        "website_url": website_url,
+        "agent1_output": agent1_output,
+    }
+    if is_partnership and partnership_context:
+        ctx["partnership_context"] = partnership_context
+    elif strategy_context:
+        ctx["strategy_context"] = strategy_context
+
+    user_lines = [
+        f"Company: {company}",
+        f"Website: {website_url or 'unknown'}",
+        "",
+        "Website research (Agent 1 output):",
+        json.dumps(agent1_output, ensure_ascii=True),
+    ]
+
+    if is_partnership and partnership_context:
+        pc = partnership_context
+        if pc.get("company_summary"):
+            user_lines += ["", f"About them: {pc['company_summary'][:400]}"]
+        if pc.get("recommended_outreach_angle"):
+            user_lines += [f"Outreach angle: {pc['recommended_outreach_angle'][:300]}"]
+        if pc.get("partnership_type"):
+            user_lines += [f"Partnership type: {pc['partnership_type']}"]
+        reasons = pc.get("reasons") or []
+        if reasons:
+            user_lines += [f"Fit reasons: {'; '.join(str(r) for r in reasons[:3])}"]
+    elif strategy_context:
+        core = strategy_context.get("core_positioning") or ""
+        if core:
+            user_lines += ["", f"What we offer: {core}"]
+        from app.services.agent_outreach_mode import (
+            compute_agent2_outreach_mode,
+            build_agent2_mode_instructions,
+            ensure_agent1_canonical_fields,
+        )
+        agent1_canon = ensure_agent1_canonical_fields(agent1_output)
+        mode = compute_agent2_outreach_mode(agent1_canon, strategy_context)
+        mode_instructions = build_agent2_mode_instructions(mode, agent1_canon, strategy_context)
+        if mode_instructions.strip():
+            user_lines += ["", f"Mode guidance: {mode_instructions}"]
+
+    if sender_info:
+        from app.services.sender_signature import get_sender_prompt_context
+        sender_block = get_sender_prompt_context(sender_info)
+        if sender_block:
+            user_lines += ["", sender_block]
+
+    user_lines += ["", "Write the outreach email now. Return JSON only."]
+    user_content = "\n".join(user_lines)
+
+    payload = {
+        "model": settings.anthropic_model or "claude-sonnet-4-6",
+        "max_tokens": 1024,
+        "system": system_prompt,
+        "messages": [{"role": "user", "content": user_content}],
+    }
+    headers = {
+        "x-api-key": resolved_key,
+        "anthropic-version": ANTHROPIC_VERSION,
+        "Content-Type": "application/json",
+    }
+
+    retries = max(0, settings.openai_rate_limit_retries)
+    base_backoff = max(0.1, settings.openai_rate_limit_backoff_seconds)
+
+    logger.info("Agent2 Claude request start company=%s lead_type=%s", company, lead_type)
+    with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
+        for attempt in range(retries + 1):
+            try:
+                response = client.post(ANTHROPIC_MESSAGES_URL, headers=headers, json=payload)
+            except httpx.RequestError as exc:
+                raise OpenAIClientError(f"Anthropic request failed: {exc}") from exc
+
+            if response.status_code in (429, 529):
+                if attempt < retries:
+                    wait = base_backoff * (2 ** attempt)
+                    logger.warning("Anthropic rate limited; retrying in %.2fs", wait)
+                    import time as _time
+                    _time.sleep(wait)
+                    continue
+                raise OpenAIRateLimitError(f"Anthropic rate limited: {response.text[:200]}")
+
+            if response.status_code >= 400:
+                raise OpenAIClientError(f"Anthropic API error {response.status_code}: {response.text[:300]}")
+
+            try:
+                result = _extract_claude_json(response.json())
+            except (ValueError, KeyError) as exc:
+                raise OpenAIClientError(f"Claude returned invalid JSON: {exc}") from exc
+
+            # Normalize to agent2 schema keys
+            if "reply_body" in result and "email_body" not in result:
+                result["email_body"] = result.pop("reply_body")
+            if "email_body" not in result or "subject" not in result:
+                raise OpenAIClientError("Claude response missing subject or email_body")
+            result.setdefault("used_signal", "claude-generated")
+
+            logger.info("Agent2 Claude request end company=%s", company)
+            return result
+
+    raise OpenAIClientError("Anthropic request failed after retries")
+
 
 class OpenAIClientError(RuntimeError):
     pass
@@ -230,6 +423,8 @@ def run_agent2(
     strategy_context: dict[str, Any] | None = None,
     sender_info: dict[str, str] | None = None,
     api_key: str | None = None,
+    lead_type: str = "local_business",
+    partnership_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     resolved_api_key = (api_key or "").strip() or (settings.openai_api_key or "").strip()
     if not resolved_api_key:
@@ -240,15 +435,26 @@ def run_agent2(
         "Authorization": f"Bearer {resolved_api_key}",
         "Content-Type": "application/json",
     }
-    payload = _build_agent2_payload(
-        lead_name=lead_name,
-        company=company,
-        website_url=website_url,
-        snapshot_text=snapshot_text,
-        agent1_output=agent1_output,
-        strategy_context=strategy_context,
-        sender_info=sender_info,
-    )
+    if lead_type == "partnership":
+        payload = _build_agent2_partnership_payload(
+            lead_name=lead_name,
+            company=company,
+            website_url=website_url,
+            snapshot_text=snapshot_text,
+            agent1_output=agent1_output,
+            partnership_context=partnership_context,
+            sender_info=sender_info,
+        )
+    else:
+        payload = _build_agent2_payload(
+            lead_name=lead_name,
+            company=company,
+            website_url=website_url,
+            snapshot_text=snapshot_text,
+            agent1_output=agent1_output,
+            strategy_context=strategy_context,
+            sender_info=sender_info,
+        )
     retries = max(0, settings.openai_rate_limit_retries)
     base_backoff = max(0.1, settings.openai_rate_limit_backoff_seconds)
 
@@ -402,6 +608,80 @@ def _build_agent2_payload(
                             "Website snapshot text:\n"
                             f"{snapshot_text}\n\n"
                             f"{strategy_instructions}\n"
+                            f"{sender_block}"
+                            "Return subject, email_body, and used_signal."
+                        ),
+                    }
+                ],
+            },
+        ],
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "agent2_output",
+                "strict": True,
+                "schema": AGENT2_SCHEMA,
+            }
+        },
+    }
+
+
+def _build_agent2_partnership_payload(
+    *,
+    lead_name: str,
+    company: str,
+    website_url: str | None,
+    snapshot_text: str,
+    agent1_output: dict[str, Any],
+    partnership_context: dict[str, Any] | None = None,
+    sender_info: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    ctx = partnership_context or {}
+    context = {
+        "lead_name": lead_name,
+        "company": company,
+        "website_url": website_url,
+        "agent1_output": agent1_output,
+        "partnership_context": ctx,
+    }
+
+    instructions = "Write a partnership outreach email to ask to JOIN or COLLABORATE with this company.\n"
+    outreach_angle = (ctx.get("recommended_outreach_angle") or "").strip()
+    if outreach_angle:
+        instructions += f"Key outreach angle: {outreach_angle}\n"
+    company_summary = (ctx.get("company_summary") or "").strip()
+    if company_summary:
+        instructions += f"About them: {company_summary[:300]}\n"
+    reasons = ctx.get("reasons") or []
+    if isinstance(reasons, list) and reasons:
+        instructions += f"Fit reasons: {'; '.join(str(r) for r in reasons[:3])}\n"
+    partnership_type = (ctx.get("partnership_type") or "").strip()
+    if partnership_type:
+        instructions += f"Partnership type we're pursuing: {partnership_type}\n"
+    instructions += "used_signal: briefly cite which partnership fact or outreach angle you used.\n"
+
+    sender_block = ""
+    if sender_info:
+        from app.services.sender_signature import get_sender_prompt_context
+        ctx_block = get_sender_prompt_context(sender_info)
+        if ctx_block:
+            sender_block = f"\n{ctx_block}\n"
+
+    return {
+        "model": settings.openai_model,
+        "input": [
+            {"role": "system", "content": [{"type": "input_text", "text": AGENT2_PARTNERSHIP_SYSTEM_PROMPT}]},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "Partnership lead context (JSON):\n"
+                            f"{json.dumps(context, ensure_ascii=True)}\n\n"
+                            "Website snapshot text:\n"
+                            f"{snapshot_text}\n\n"
+                            f"{instructions}"
                             f"{sender_block}"
                             "Return subject, email_body, and used_signal."
                         ),

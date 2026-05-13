@@ -16,6 +16,10 @@ class WorkspaceSettingsRead(BaseModel):
     google_oauth_client_secret: str | None = None
     gmail_oauth_redirect_uri: str | None = None
     gmail_connected: bool = False
+    gmail_send_as_email: str | None = None
+    gmail_send_as_display_name: str | None = None
+    anthropic_api_key: str | None = None
+    preferred_ai_provider: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -27,3 +31,7 @@ class WorkspaceSettingsUpdate(BaseModel):
     google_oauth_client_secret: str | None = None
     gmail_oauth_redirect_uri: str | None = None
     gmail_connected: bool | None = None
+    gmail_send_as_email: str | None = None
+    gmail_send_as_display_name: str | None = None
+    anthropic_api_key: str | None = None
+    preferred_ai_provider: str | None = None

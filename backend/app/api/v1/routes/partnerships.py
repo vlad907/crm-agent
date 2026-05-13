@@ -206,6 +206,14 @@ def convert_partners_to_leads(
         crawled_text = signals.get("crawled_text")
         has_snapshot = bool(crawled_text and website_url)
 
+        partnership_context = {
+            "fit_score": partner.fit_score,
+            "partnership_type": partner.partnership_type,
+            "reasons": signals.get("reasons", []),
+            "company_summary": signals.get("company_summary", ""),
+            "recommended_outreach_angle": partner.recommended_outreach_angle,
+        }
+
         lead = Lead(
             workspace_id=ctx.workspace_id,
             name=partner.company_name,
@@ -216,6 +224,8 @@ def convert_partners_to_leads(
             source="partnership_discovery",
             status=LEAD_STATUS_RESEARCHING if has_snapshot else DEFAULT_LEAD_STATUS,
             industry=_clean_text(partner.industry),
+            lead_type="partnership",
+            partnership_context=partnership_context,
         )
         db.add(lead)
         db.flush()
@@ -359,7 +369,7 @@ def generate_partner_outreach(
     db: Session = Depends(get_db),
 ):
     from app.services.response_draft_agent import generate_response_draft
-    from app.services.workspace_credentials import resolve_openai_api_key
+    from app.services.workspace_credentials import resolve_email_generation_provider
     from app.models.workspace_profile import WorkspaceProfile
     from app.services.sender_signature import get_sender_info, replace_placeholders
 
@@ -368,39 +378,53 @@ def generate_partner_outreach(
         raise HTTPException(status_code=404, detail="Partner candidate not found")
 
     profile = db.get(WorkspaceProfile, ctx.workspace_id)
-    profile_dict = None
+    profile_dict: dict | None = None
     if profile:
         profile_dict = {
             "business_name": profile.business_name,
-            "business_description": profile.business_description,
             "preferred_tone": profile.preferred_tone,
+            "service_area": profile.service_area,
+            "service_specialties": profile.service_specialties or [],
         }
 
     sender_info = get_sender_info(db, ctx.workspace_id)
 
     signals = row.extracted_signals or {}
-    context_text = (
-        f"COLD OUTREACH to: {row.company_name}\n"
-        f"We are reaching out to THEM — this is NOT a reply.\n"
-        f"Recipient company: {row.company_name}\n"
-    )
-    if signals.get("company_summary"):
-        context_text += f"What they do: {signals['company_summary']}\n"
-    if row.partnership_type:
-        context_text += f"Partnership type: {row.partnership_type}\n"
-    if row.recommended_outreach_angle:
-        context_text += f"Our angle: {row.recommended_outreach_angle}\n"
-    if row.contact_emails:
-        context_text += f"Their contact: {row.contact_emails[0]}\n"
 
-    api_key, _src = resolve_openai_api_key(db, ctx.workspace_id)
+    # Build recipient context. company_summary is from the AI fit agent — safe one-liner.
+    # Raw crawled text and business_description are excluded to prevent sales-pitch bleed.
+    context_lines = [
+        f"Company name: {row.company_name}",
+    ]
+    summary = (signals.get("company_summary") or "").strip()
+    if summary:
+        context_lines.append(f"What they do: {summary[:400]}")
+    if row.industry:
+        context_lines.append(f"Industry: {row.industry}")
+    if row.location:
+        context_lines.append(f"Location: {row.location}")
+    if row.partnership_type:
+        context_lines.append(f"Partnership type: {row.partnership_type}")
+    if row.recommended_outreach_angle:
+        context_lines.append(f"Key insight: {row.recommended_outreach_angle[:200]}")
+
+    context_text = "\n".join(context_lines)
+
+    email_provider, email_api_key = resolve_email_generation_provider(db, ctx.workspace_id)
+    if not email_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="No AI API key configured. Add an Anthropic or OpenAI API key in Settings.",
+        )
+
     result = generate_response_draft(
         inbound_body=context_text,
-        inbound_subject=f"Partnership opportunity with {row.company_name}",
-        classification="cold_outreach",
+        classification="partner_vendor_inquiry",
         workspace_profile=profile_dict,
         sender_info=sender_info,
-        api_key=api_key,
+        provider=email_provider,
+        anthropic_api_key=email_api_key if email_provider == "anthropic" else None,
+        api_key=email_api_key if email_provider == "openai" else None,
     )
 
     subject = replace_placeholders(result.get("subject", ""), sender_info)

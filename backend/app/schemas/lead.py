@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 LeadStatus = Literal[
     "discovered",
@@ -22,6 +22,9 @@ LeadStatus = Literal[
 ]
 
 
+LeadType = Literal["local_business", "partnership"]
+
+
 class LeadBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     title: str | None = Field(default=None, max_length=255)
@@ -33,6 +36,8 @@ class LeadBase(BaseModel):
     email: EmailStr | None = None
     source: str = Field(min_length=1, max_length=100)
     status: LeadStatus = "imported"
+    lead_type: LeadType = "local_business"
+    partnership_context: dict[str, Any] | None = None
 
 
 class LeadCreate(LeadBase):
@@ -50,6 +55,8 @@ class LeadUpdate(BaseModel):
     email: EmailStr | None = None
     source: str | None = Field(default=None, min_length=1, max_length=100)
     status: LeadStatus | None = None
+    lead_type: LeadType | None = None
+    partnership_context: dict[str, Any] | None = None
 
 
 class LeadPipelineSummary(BaseModel):
@@ -69,6 +76,20 @@ class LeadRead(LeadBase):
     created_at: datetime
     updated_at: datetime
     pipeline_summary: LeadPipelineSummary | None = None
+
+    # Override with lenient str to avoid crashing the list on malformed DB emails
+    email: str | None = None  # type: ignore[assignment]
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def sanitize_email(cls, v: object) -> str | None:
+        """Strip bracket placeholders and blank strings; return None for invalid-looking values."""
+        if not isinstance(v, str):
+            return None
+        stripped = v.strip()
+        if not stripped or stripped.startswith("[") or "@" not in stripped:
+            return None
+        return stripped
 
 
 class LeadListResponse(BaseModel):

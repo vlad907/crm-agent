@@ -16,7 +16,10 @@ interface LeadListTableProps {
   rowActionState: Record<string, { ingest: boolean; runAi: boolean }>;
   onToggleSelectLead: (id: string) => void;
   onToggleSelectAllVisible: () => void;
+  /** Row-click handler — opens the side summary panel. */
   onSelectLead: (id: string) => void;
+  /** Optional fast-path for the "Open" button: navigate straight to /leads/{id} without the side panel. */
+  onOpenDetail?: (id: string) => void;
   onIngestLead: (id: string) => void;
   onRunAiLead: (id: string) => void;
   onRerunLead: (id: string) => void;
@@ -80,6 +83,7 @@ export function LeadListTable({
   onToggleSelectLead,
   onToggleSelectAllVisible,
   onSelectLead,
+  onOpenDetail,
   onIngestLead,
   onRunAiLead,
   onRerunLead
@@ -130,6 +134,7 @@ export function LeadListTable({
             <th className="sortable-th" onClick={() => onSort("company")} title="Sort by company">
               Company
             </th>
+            <th>Type</th>
             <th className="sortable-th" onClick={() => onSort("status")} title="Sort by pipeline status">
               Status
             </th>
@@ -144,13 +149,13 @@ export function LeadListTable({
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={7} className="muted">
+              <td colSpan={8} className="muted">
                 <Spinner label="Loading leads..." />
               </td>
             </tr>
           ) : sortedLeads.length === 0 ? (
             <tr>
-              <td colSpan={7}>
+              <td colSpan={8}>
                 <div className="empty-state">No leads yet. Import prospects or create a lead manually.</div>
               </td>
             </tr>
@@ -177,6 +182,13 @@ export function LeadListTable({
                   </td>
                   <td>
                     <strong>{lead.company}</strong>
+                  </td>
+                  <td>
+                    {lead.lead_type === "partnership" ? (
+                      <span className="status-badge" style={{ background: "var(--purple)", color: "#fff", fontSize: ".72rem" }}>Partnership</span>
+                    ) : (
+                      <span className="status-badge status-new" style={{ fontSize: ".72rem" }}>Local Biz</span>
+                    )}
                   </td>
                   <td>
                     <span className={statusClass(summary.computed_stage)}>{stageLabel(summary.computed_stage)}</span>
@@ -245,8 +257,8 @@ export function LeadListTable({
                       <button
                         type="button"
                         className="action-btn"
-                        title="Open lead detail"
-                        onClick={() => onSelectLead(lead.id)}
+                        title="Open lead detail page"
+                        onClick={() => (onOpenDetail ?? onSelectLead)(lead.id)}
                       >
                         Open
                       </button>

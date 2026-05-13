@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import JSON, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -18,15 +18,15 @@ if TYPE_CHECKING:
 class WebsitePage(Base):
     __tablename__ = "website_pages"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     workspace_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     lead_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("leads.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -34,8 +34,8 @@ class WebsitePage(Base):
     url: Mapped[str] = mapped_column(String(500), nullable=False)
     page_type: Mapped[str] = mapped_column(String(20), nullable=False, default="other", index=True)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
-    extracted_emails: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    extracted_phones: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    extracted_emails: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    extracted_phones: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

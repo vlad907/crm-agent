@@ -67,6 +67,127 @@ class GmailConnectionStatus:
     last_error: str | None
 
 
+# ── Google login state (no workspace_id needed — used before authentication) ──
+
+GOOGLE_LOGIN_SCOPES = "openid email profile"
+
+
+def encode_google_login_state() -> str:
+    payload = {"intent": "google_login", "iat": int(time.time())}
+    payload_segment = _urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    signature_segment = _state_signature(payload_segment)
+    return f"{payload_segment}.{signature_segment}"
+
+
+def decode_google_login_state(raw_state: str) -> None:
+    """Validate signature + expiry; raises GmailOAuthStateError on failure."""
+    parts = (raw_state or "").split(".", 1)
+    if len(parts) != 2:
+        raise GmailOAuthStateError("Invalid login state.")
+    payload_segment, signature_segment = parts
+    if not hmac.compare_digest(signature_segment, _state_signature(payload_segment)):
+        raise GmailOAuthStateError("Login state signature mismatch.")
+    try:
+        payload = json.loads(_urlsafe_b64decode(payload_segment).decode("utf-8"))
+        issued_at = int(payload["iat"])
+    except (KeyError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise GmailOAuthStateError("Login state payload is invalid.") from exc
+    if int(time.time()) - issued_at > STATE_MAX_AGE_SECONDS:
+        raise GmailOAuthStateError("Login state expired. Try signing in again.")
+
+
+def resolve_google_login_oauth_config(db: Session) -> tuple[str, str, str]:
+    """
+    Resolve client_id/secret/redirect_uri for the Google login flow.
+    Prefers env vars, then falls back to the first workspace that has credentials configured.
+    """
+    client_id = (settings.google_oauth_client_id or "").strip()
+    client_secret = (settings.google_oauth_client_secret or "").strip()
+    redirect_uri = settings.google_login_redirect_uri.strip()
+
+    if not client_id or not client_secret:
+        # Fall back to any workspace that has them stored
+        from sqlalchemy import select as _select
+        from app.models.workspace_setting import WorkspaceSetting as _WS
+        row = db.scalar(_select(_WS).where(_WS.google_oauth_client_id.isnot(None)).limit(1))
+        if row:
+            if not client_id:
+                client_id = (row.google_oauth_client_id or "").strip()
+            if not client_secret:
+                client_secret = (row.google_oauth_client_secret or "").strip()
+
+    if not client_id:
+        raise GmailConfigurationError(
+            "Google OAuth client ID is not configured. Add it under Settings → Integrations."
+        )
+    if not client_secret:
+        raise GmailConfigurationError(
+            "Google OAuth client secret is not configured. Add it under Settings → Integrations."
+        )
+    return client_id, client_secret, redirect_uri
+
+
+def build_google_login_url(db: Session) -> str:
+    client_id, _, redirect_uri = resolve_google_login_oauth_config(db)
+    state = encode_google_login_state()
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": GOOGLE_LOGIN_SCOPES,
+        "access_type": "offline",
+        "prompt": "select_account",
+        "state": state,
+    }
+    return f"{GOOGLE_OAUTH_AUTHORIZE_URL}?{urlencode(params)}"
+
+
+def exchange_google_login_code(db: Session, code: str) -> dict[str, Any]:
+    """Exchange auth code for tokens using the login redirect URI."""
+    client_id, client_secret, redirect_uri = resolve_google_login_oauth_config(db)
+    payload = {
+        "code": code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": redirect_uri,
+        "grant_type": "authorization_code",
+    }
+    with httpx.Client(timeout=20.0) as client:
+        response = client.post(GOOGLE_OAUTH_TOKEN_URL, data=payload)
+    try:
+        resp_json = response.json()
+    except Exception:
+        resp_json = {}
+    if response.status_code >= 400 or "access_token" not in resp_json:
+        try:
+            google_error = resp_json.get("error", "")
+            google_desc = resp_json.get("error_description", "")
+            if google_error == "invalid_client":
+                detail = (
+                    "Google rejected the OAuth credentials — the Client Secret appears to be wrong or expired. "
+                    "Go to Google Cloud Console → Credentials, regenerate the secret, and update it in Settings."
+                )
+            elif google_desc:
+                detail = google_desc
+            elif google_error:
+                detail = google_error
+            else:
+                detail = response.text.strip() or "Token exchange failed"
+        except Exception:
+            detail = response.text.strip() or "Token exchange failed"
+        raise GmailOAuthExchangeError(detail)
+    return resp_json
+
+
+def fetch_google_userinfo(*, access_token: str) -> dict[str, Any]:
+    headers = {"Authorization": f"Bearer {access_token}"}
+    with httpx.Client(timeout=20.0) as client:
+        response = client.get("https://www.googleapis.com/oauth2/v3/userinfo", headers=headers)
+    if response.status_code >= 400:
+        raise GmailApiError("Failed to fetch Google user info.", status_code=502)
+    return response.json()
+
+
 def _urlsafe_b64encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
 
@@ -184,8 +305,32 @@ def exchange_code_for_tokens(*, db: Session, workspace_id: UUID, code: str) -> d
     with httpx.Client(timeout=20.0) as client:
         response = client.post(GOOGLE_OAUTH_TOKEN_URL, data=payload)
     if response.status_code >= 400:
-        detail = response.text.strip() or "unknown error"
-        raise GmailOAuthExchangeError(f"Failed to exchange OAuth code: {detail}")
+        raw = response.text.strip() or "unknown error"
+        # Try to extract a human-readable message from Google's JSON error response
+        try:
+            err_body = response.json()
+            google_error = err_body.get("error", "")
+            google_desc = err_body.get("error_description", "")
+            if google_error == "invalid_client":
+                detail = (
+                    "Google rejected the OAuth credentials — the Client Secret appears to be wrong or expired. "
+                    "Go to Google Cloud Console → Credentials, regenerate the secret, and update it in Settings."
+                )
+            elif google_error == "redirect_uri_mismatch":
+                detail = (
+                    "Redirect URI mismatch. Make sure "
+                    "http://localhost:8000/api/v1/integrations/gmail/callback "
+                    "is listed under Authorized redirect URIs in your Google Cloud Console OAuth client."
+                )
+            elif google_desc:
+                detail = google_desc
+            elif google_error:
+                detail = google_error
+            else:
+                detail = raw
+        except Exception:
+            detail = raw
+        raise GmailOAuthExchangeError(detail)
     data = response.json()
     if not isinstance(data, dict) or not isinstance(data.get("access_token"), str):
         raise GmailOAuthExchangeError("OAuth response missing access_token.")
@@ -454,12 +599,32 @@ def _gmail_api_post(
     return data
 
 
-def _build_raw_message(*, to_email: str, subject: str, body: str) -> str:
+def _build_raw_message(
+    *,
+    to_email: str,
+    subject: str,
+    body: str,
+    from_email: str | None = None,
+    from_name: str | None = None,
+) -> str:
     message = EmailMessage()
     message["To"] = to_email
     message["Subject"] = subject
+    if from_email:
+        if from_name:
+            message["From"] = f"{from_name} <{from_email}>"
+        else:
+            message["From"] = from_email
     message.set_content(body)
     return _urlsafe_b64encode(message.as_bytes())
+
+
+def _get_send_as_config(db: Session, workspace_id: UUID) -> tuple[str | None, str | None]:
+    """Return (send_as_email, send_as_display_name) from workspace settings, or (None, None)."""
+    ws = db.get(WorkspaceSetting, workspace_id)
+    if ws is None:
+        return None, None
+    return ws.gmail_send_as_email, ws.gmail_send_as_display_name
 
 
 def create_gmail_draft(
@@ -470,8 +635,73 @@ def create_gmail_draft(
     subject: str,
     body: str,
 ) -> dict[str, Any]:
-    payload = {"message": {"raw": _build_raw_message(to_email=to_email, subject=subject, body=body)}}
+    from_email, from_name = _get_send_as_config(db, workspace_id)
+    raw = _build_raw_message(
+        to_email=to_email,
+        subject=subject,
+        body=body,
+        from_email=from_email,
+        from_name=from_name,
+    )
+    payload = {"message": {"raw": raw}}
     return _gmail_api_post(db=db, workspace_id=workspace_id, path="/drafts", payload=payload)
+
+
+def fetch_send_as_aliases(db: Session, workspace_id: UUID) -> list[dict[str, Any]]:
+    """Return the list of send-as addresses for the connected Gmail account."""
+    account, token = get_active_token(db, workspace_id)
+    url = f"{GMAIL_API_ROOT}/settings/sendAs"
+    headers = {"Authorization": f"Bearer {token.access_token}"}
+    with httpx.Client(timeout=20.0) as client:
+        response = client.get(url, headers=headers)
+    if response.status_code == 401 and token.refresh_token:
+        refreshed = _refresh_access_token(db, account=account, refresh_token=token.refresh_token)
+        headers = {"Authorization": f"Bearer {refreshed.access_token}"}
+        with httpx.Client(timeout=20.0) as client:
+            response = client.get(url, headers=headers)
+    if response.status_code >= 400:
+        detail = response.text.strip() or "unknown Gmail API error"
+        raise GmailApiError(f"Failed to fetch send-as aliases: {detail}", status_code=502)
+    data = response.json()
+    return data.get("sendAs", [])
+
+
+def disconnect_gmail(db: Session, workspace_id: UUID) -> None:
+    """Revoke tokens, mark account disconnected, clear workspace gmail_connected flag."""
+    account = get_gmail_account(db, workspace_id)
+    if account is not None:
+        # Best-effort token revocation
+        token = db.scalar(
+            select(OAuthToken)
+            .where(OAuthToken.integration_account_id == account.id)
+            .order_by(OAuthToken.created_at.desc())
+            .limit(1)
+        )
+        if token:
+            try:
+                with httpx.Client(timeout=10.0) as client:
+                    client.post(
+                        "https://oauth2.googleapis.com/revoke",
+                        params={"token": token.access_token},
+                    )
+            except Exception:  # pragma: no cover
+                pass
+        # Delete all tokens for this account
+        all_tokens = db.scalars(
+            select(OAuthToken).where(OAuthToken.integration_account_id == account.id)
+        ).all()
+        for t in all_tokens:
+            db.delete(t)
+        account.status = "disconnected"
+        account.last_error = None
+        db.flush()
+
+    ws = db.get(WorkspaceSetting, workspace_id)
+    if ws is not None:
+        ws.gmail_connected = False
+        ws.gmail_send_as_email = None
+        ws.gmail_send_as_display_name = None
+        db.flush()
 
 
 def send_gmail_draft(*, db: Session, workspace_id: UUID, gmail_draft_id: str) -> dict[str, Any]:

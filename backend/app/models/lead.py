@@ -3,13 +3,17 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, ForeignKey, String, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Enum, ForeignKey, JSON, String, text
+from sqlalchemy import Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.lead_status import DEFAULT_LEAD_STATUS, LEAD_STATUS_VALUES
 from app.models.mixins import TimestampMixin
+
+LEAD_TYPE_LOCAL_BUSINESS = "local_business"
+LEAD_TYPE_PARTNERSHIP = "partnership"
+LEAD_TYPE_VALUES = [LEAD_TYPE_LOCAL_BUSINESS, LEAD_TYPE_PARTNERSHIP]
 
 if TYPE_CHECKING:
     from app.models.email_draft import EmailDraft
@@ -21,9 +25,9 @@ if TYPE_CHECKING:
 class Lead(TimestampMixin, Base):
     __tablename__ = "leads"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     workspace_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -44,6 +48,14 @@ class Lead(TimestampMixin, Base):
         server_default=text(f"'{DEFAULT_LEAD_STATUS}'"),
         index=True,
     )
+    lead_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=LEAD_TYPE_LOCAL_BUSINESS,
+        server_default=text(f"'{LEAD_TYPE_LOCAL_BUSINESS}'"),
+        index=True,
+    )
+    partnership_context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="leads")
     snapshots: Mapped[list["WebsiteSnapshot"]] = relationship(

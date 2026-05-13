@@ -8,7 +8,7 @@
     "build": "next build && node scripts/prepare-standalone.cjs",
     "start": "next start",
     "electron:dev": "concurrently -k \"next dev -H 127.0.0.1 -p 3000\" \"wait-on http://127.0.0.1:3000 && cross-env ELECTRON_DEV=1 electron .\"",
-    "electron:build": "next build && node scripts/prepare-standalone.cjs && electron-builder"
+    "electron:build": "cross-env CRM_API_PROXY_TARGET=http://127.0.0.1:8765 next build && node scripts/prepare-standalone.cjs && electron-builder"
   },
   "build": {
     "appId": "com.crmcommand.desktop",
@@ -33,8 +33,7 @@
           "**/*",
           "!**/__pycache__/**",
           "!**/*.pyc",
-          "!**/.venv/**",
-          "!**/venv/**"
+          "!**/alembic/versions/**"
         ]
       }
     ],

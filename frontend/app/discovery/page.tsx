@@ -81,6 +81,7 @@ export default function DiscoveryPage() {
   const [runningSearch, setRunningSearch] = useState(false);
   const [converting, setConverting] = useState(false);
   const [deletingProspects, setDeletingProspects] = useState(false);
+  const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null);
   const [presets, setPresets] = useState<Array<{ label: string; value: string }>>([]);
   const [activePreset, setActivePreset] = useState("");
 
@@ -457,8 +458,8 @@ export default function DiscoveryPage() {
                 const isImported = p.import_status === "imported";
                 return (
                   <div key={p.id}
-                    className={`prospect-card${selectedProspectIds.has(p.id) ? " selected" : ""}`}
-                    onClick={() => !isImported && toggleProspect(p.id)}
+                    className={`prospect-card${selectedProspectIds.has(p.id) ? " selected" : ""}${selectedProspect?.id === p.id ? " selected" : ""}`}
+                    onClick={() => setSelectedProspect(p)}
                   >
                     <input type="checkbox" className="prospect-card-check"
                       checked={selectedProspectIds.has(p.id)}
@@ -498,6 +499,91 @@ export default function DiscoveryPage() {
             <button className="btn-secondary" disabled={!canNext || loadingProspects} onClick={() => setOffset(o => o + PAGE_SIZE)}>Next</button>
             <span className="muted">Showing {prospects.length} of {totalProspects}</span>
           </div>
+
+          {/* Local prospect slideout panel */}
+          {selectedProspect && (
+            <>
+              <div className="slideout-backdrop" onClick={() => setSelectedProspect(null)} />
+              <aside className="slideout-panel">
+                <div className="slideout-header">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <h2 style={{ fontSize: "1.15rem", margin: 0 }}>{selectedProspect.company_name}</h2>
+                    {selectedProspect.website_url && (
+                      <a href={selectedProspect.website_url} target="_blank" rel="noopener noreferrer" className="external-link" style={{ fontSize: ".84rem" }}>
+                        {selectedProspect.website_url}
+                      </a>
+                    )}
+                  </div>
+                  <button type="button" className="slideout-close" onClick={() => setSelectedProspect(null)} aria-label="Close">&times;</button>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "0 24px", marginBottom: 16 }}>
+                  {selectedProspect.import_status !== "imported" && (
+                    <button type="button" className="btn-primary" style={{ fontSize: ".8rem" }}
+                      disabled={converting}
+                      onClick={() => {
+                        setConverting(true);
+                        convertProspectsToLeads({ prospect_ids: [selectedProspect.id], require_website: requireWebsite })
+                          .then(r => {
+                            setMessage(`Converted ${r.converted_count} to lead.${r.skipped_count ? ` Skipped ${r.skipped_count}.` : ""}`);
+                            setSelectedProspect(null);
+                            void fetchProspects(offset, statusFilter, categoryFilter, searchFilter);
+                          })
+                          .catch(e => setError(getErr(e)))
+                          .finally(() => setConverting(false));
+                      }}>
+                      {converting ? "Converting..." : "Add to CRM"}
+                    </button>
+                  )}
+                  {selectedProspect.import_status === "imported" && (
+                    <span className="status-badge status-send" style={{ fontSize: ".8rem" }}>Already in CRM</span>
+                  )}
+                </div>
+
+                <div className="slideout-body">
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                    {selectedProspect.category && (
+                      <div className="subcard">
+                        <strong className="slideout-label">Category</strong>
+                        <div style={{ marginTop: 4 }}>{selectedProspect.category}</div>
+                      </div>
+                    )}
+                    {selectedProspect.rating != null && (
+                      <div className="subcard">
+                        <strong className="slideout-label">Rating</strong>
+                        <div style={{ marginTop: 4 }}>
+                          {renderStars(selectedProspect.rating)}
+                          {" "}{selectedProspect.rating.toFixed(1)}
+                          {selectedProspect.review_count != null && <span className="muted" style={{ fontSize: ".8rem" }}> ({selectedProspect.review_count} reviews)</span>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {selectedProspect.address && (
+                    <div className="subcard" style={{ marginBottom: 10 }}>
+                      <strong className="slideout-label">Address</strong>
+                      <div style={{ fontSize: ".86rem", marginTop: 4 }}>{selectedProspect.address}</div>
+                    </div>
+                  )}
+
+                  {selectedProspect.phone && (
+                    <div className="subcard" style={{ marginBottom: 10 }}>
+                      <strong className="slideout-label">Phone</strong>
+                      <div style={{ fontSize: ".86rem", marginTop: 4 }}>{selectedProspect.phone}</div>
+                    </div>
+                  )}
+
+                  {!selectedProspect.website_url && (
+                    <div className="subcard" style={{ marginBottom: 10, borderColor: "var(--amber)", background: "var(--amber-soft)" }}>
+                      <strong className="slideout-label" style={{ color: "var(--amber)" }}>No Website</strong>
+                      <div style={{ fontSize: ".82rem", marginTop: 4 }}>This business has no website — outreach will be limited.</div>
+                    </div>
+                  )}
+                </div>
+              </aside>
+            </>
+          )}
         </>
       )}
 

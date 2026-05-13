@@ -16,16 +16,22 @@ class Settings(BaseSettings):
     debug: bool = False
 
     database_url: str = Field(
-        default="postgresql+psycopg2://postgres:postgres@db:5432/crm_db",
+        default="sqlite:///./crm.db",
         alias="DATABASE_URL",
     )
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
+    anthropic_model: str = Field(default="claude-sonnet-4-5", alias="ANTHROPIC_MODEL")
     google_places_api_key: str | None = Field(default=None, alias="GOOGLE_PLACES_API_KEY")
     google_oauth_client_id: str | None = Field(default=None, alias="GOOGLE_OAUTH_CLIENT_ID")
     google_oauth_client_secret: str | None = Field(default=None, alias="GOOGLE_OAUTH_CLIENT_SECRET")
     gmail_oauth_redirect_uri: str = Field(
         default="http://localhost:8000/api/v1/integrations/gmail/callback",
         alias="GMAIL_OAUTH_REDIRECT_URI",
+    )
+    google_login_redirect_uri: str = Field(
+        default="http://localhost:8000/api/v1/auth/google/callback",
+        alias="GOOGLE_LOGIN_REDIRECT_URI",
     )
     gmail_oauth_scopes: str = Field(
         default=(
